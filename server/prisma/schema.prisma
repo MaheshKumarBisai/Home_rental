@@ -1,0 +1,179 @@
+// Prisma Schema for House Rental Platform
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// USER MODEL - Authentication & Profiles
+// ========================================
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  password        String
+  firstName       String
+  lastName        String
+  phone           String?
+  role            Role      @default(RENTER)
+  isBlocked       Boolean   @default(false)
+  profileImage    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  properties      Property[]
+  bookings        Booking[]
+  reviews         Review[]
+  refreshTokens   RefreshToken[]
+  sentMessages    Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+
+  @@index([email])
+  @@map("users")
+}
+
+enum Role {
+  RENTER
+  OWNER
+  ADMIN
+}
+
+// ========================================
+// REFRESH TOKEN MODEL - JWT Authentication
+// ========================================
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// ========================================
+// PROPERTY MODEL - Rental Properties
+// ========================================
+model Property {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @db.Text
+  price       Float
+  address     String
+  city        String
+  state       String?
+  zipCode     String?
+  type        PropertyType
+  bedrooms    Int
+  bathrooms   Int
+  area        Float?
+  amenities   String[]
+  images      String[]
+  isAvailable Boolean  @default(true)
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  bookings    Booking[]
+  reviews     Review[]
+
+  @@index([ownerId])
+  @@index([city])
+  @@index([type])
+  @@index([isAvailable])
+  @@map("properties")
+}
+
+enum PropertyType {
+  APARTMENT
+  VILLA
+  HOUSE
+  STUDIO
+  PG
+  CONDO
+  TOWNHOUSE
+}
+
+// ========================================
+// BOOKING MODEL - Property Reservations
+// ========================================
+model Booking {
+  id           String        @id @default(uuid())
+  propertyId   String
+  property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  renterId     String
+  renter       User          @relation(fields: [renterId], references: [id], onDelete: Cascade)
+  checkInDate  DateTime
+  checkOutDate DateTime
+  totalPrice   Float
+  status       BookingStatus @default(CONFIRMED)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  messages     Message[]
+
+  @@index([propertyId])
+  @@index([renterId])
+  @@index([status])
+  @@index([checkInDate, checkOutDate])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+// ========================================
+// MESSAGE MODEL - Real-time Chat
+// ========================================
+model Message {
+  id         String   @id @default(uuid())
+  bookingId  String
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  senderId   String
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  message    String   @db.Text
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([bookingId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@map("messages")
+}
+
+// ========================================
+// REVIEW MODEL - Property Ratings
+// ========================================
+model Review {
+  id         String   @id @default(uuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  renterId   String
+  renter     User     @relation(fields: [renterId], references: [id], onDelete: Cascade)
+  rating     Int
+  comment    String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([propertyId])
+  @@index([renterId])
+  @@unique([propertyId, renterId])
+  @@map("reviews")
+}
