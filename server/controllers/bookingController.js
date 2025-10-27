@@ -7,61 +7,13 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 /**
- * Check for date conflicts
+ * @route   POST /api/bookings/apply
+ * @desc    Apply for a property
+ * @access  Private (Renter)
  */
-const checkDateConflict = async (propertyId, checkInDate, checkOutDate, excludeBookingId = null) => {
-  const conflictingBooking = await prisma.booking.findFirst({
-    where: {
-      propertyId,
-      status: 'CONFIRMED',
-      ...(excludeBookingId && { id: { not: excludeBookingId } }),
-      OR: [
-        {
-          // New booking starts during existing booking
-          AND: [
-            { checkInDate: { lte: checkInDate } },
-            { checkOutDate: { gt: checkInDate } }
-          ]
-        },
-        {
-          // New booking ends during existing booking
-          AND: [
-            { checkInDate: { lt: checkOutDate } },
-            { checkOutDate: { gte: checkOutDate } }
-          ]
-        },
-        {
-          // New booking completely covers existing booking
-          AND: [
-            { checkInDate: { gte: checkInDate } },
-            { checkOutDate: { lte: checkOutDate } }
-          ]
-        }
-      ]
-    }
-  });
-
-  return conflictingBooking !== null;
-};
-
-/**
- * Calculate total price
- */
-const calculateTotalPrice = (checkInDate, checkOutDate, pricePerNight) => {
-  const checkIn = new Date(checkInDate);
-  const checkOut = new Date(checkOutDate);
-  const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-  return nights * pricePerNight;
-};
-
-/**
- * @route   POST /api/bookings/create
- * @desc    Create new booking
- * @access  Private
- */
-exports.createBooking = async (req, res, next) => {
+exports.applyForProperty = async (req, res, next) => {
   try {
-    const { propertyId, checkInDate, checkOutDate } = req.validatedBody;
+    const { propertyId } = req.validatedBody;
     const renterId = req.user.id;
 
     // Check if property exists
@@ -77,10 +29,10 @@ exports.createBooking = async (req, res, next) => {
     }
 
     // Check if property is available
-    if (!property.isAvailable) {
+    if (property.availability === 'Booked') {
       return res.status(400).json({
         status: 'error',
-        message: 'Property is not available for booking'
+        message: 'Property is no longer available'
       });
     }
 
@@ -88,47 +40,38 @@ exports.createBooking = async (req, res, next) => {
     if (property.ownerId === renterId) {
       return res.status(400).json({
         status: 'error',
-        message: 'You cannot book your own property'
+        message: 'You cannot apply for your own property'
       });
     }
 
-    // Check for date conflicts (PREVENT DOUBLE-BOOKING)
-    const hasConflict = await checkDateConflict(propertyId, new Date(checkInDate), new Date(checkOutDate));
+    // Check if user has already applied for this property
+    const existingApplication = await prisma.booking.findFirst({
+        where: {
+            propertyId,
+            renterId
+        }
+    });
 
-    if (hasConflict) {
-      return res.status(409).json({
-        status: 'error',
-        message: 'Property is already booked for selected dates. Please choose different dates.'
-      });
+    if (existingApplication) {
+        return res.status(409).json({
+            status: 'error',
+            message: 'You have already applied for this property.'
+        });
     }
 
-    // Calculate total price
-    const totalPrice = calculateTotalPrice(checkInDate, checkOutDate, property.price);
-
-    // Create booking
-    const booking = await prisma.booking.create({
+    // Create application (booking with PENDING status)
+    const application = await prisma.booking.create({
       data: {
         propertyId,
         renterId,
-        checkInDate: new Date(checkInDate),
-        checkOutDate: new Date(checkOutDate),
-        totalPrice,
-        status: 'CONFIRMED'
+        status: 'PENDING'
       },
       include: {
         property: {
           select: {
             title: true,
             address: true,
-            city: true,
-            images: true
-          }
-        },
-        renter: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true
+            city: true
           }
         }
       }
@@ -136,8 +79,8 @@ exports.createBooking = async (req, res, next) => {
 
     res.status(201).json({
       status: 'success',
-      message: 'Booking created successfully',
-      data: { booking }
+      message: 'Application submitted successfully',
+      data: { application }
     });
 
   } catch (error) {
@@ -369,6 +312,127 @@ exports.cancelBooking = async (req, res, next) => {
       data: { booking: cancelledBooking }
     });
 
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   PUT /api/bookings/applications/:id/status
+ * @desc    Update application status (Accept/Deny)
+ * @access  Private (Owner/Admin)
+ */
+exports.updateApplicationStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // Expects "ACCEPTED" or "DENIED"
+
+    if (!['ACCEPTED', 'DENIED'].includes(status)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid status. Must be ACCEPTED or DENIED.'
+      });
+    }
+
+    // Find the application/booking
+    const application = await prisma.booking.findUnique({
+      where: { id },
+      include: { property: true }
+    });
+
+    if (!application) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Application not found'
+      });
+    }
+
+    // Check permissions (only property owner or admin can decide)
+    if (application.property.ownerId !== req.user.id && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to update this application'
+      });
+    }
+
+    // Update the application status
+    const updatedApplication = await prisma.booking.update({
+      where: { id },
+      data: { status }
+    });
+
+    // If accepted, update property availability and deny other applications
+    if (status === 'ACCEPTED') {
+      // Mark property as booked
+      await prisma.property.update({
+        where: { id: application.propertyId },
+        data: { availability: 'Booked' }
+      });
+
+      // Deny other pending applications for this property
+      await prisma.booking.updateMany({
+        where: {
+          propertyId: application.propertyId,
+          status: 'PENDING',
+          id: { not: id } // Exclude the current application
+        },
+        data: { status: 'DENIED' }
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: `Application has been ${status.toLowerCase()}.`,
+      data: { application: updatedApplication }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   GET /api/bookings/owner
+ * @desc    Get all bookings for all properties of the logged-in owner
+ * @access  Private (Owner)
+ */
+exports.getOwnerBookings = async (req, res, next) => {
+  try {
+    const ownerId = req.user.id;
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        property: {
+          ownerId: ownerId,
+        },
+      },
+      include: {
+        property: {
+          select: {
+            id: true,
+            title: true,
+            city: true,
+          },
+        },
+        renter: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    res.status(200).json({
+      status: 'success',
+      results: bookings.length,
+      data: { bookings },
+    });
   } catch (error) {
     next(error);
   }

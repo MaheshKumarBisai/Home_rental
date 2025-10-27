@@ -8,66 +8,51 @@ const prisma = new PrismaClient();
 
 /**
  * @route   POST /api/reviews/add
- * @desc    Add review for a property
- * @access  Private
+ * @desc    Add a review to a property
+ * @access  Private (Renter who has booked the property)
  */
-exports.addReview = async (req, res, next) => {
+exports.createReview = async (req, res, next) => {
   try {
-    const { propertyId, rating, comment } = req.validatedBody;
+    const { propertyId, rating, comment } = req.body;
     const renterId = req.user.id;
 
-    // Check if property exists
-    const property = await prisma.property.findUnique({
-      where: { id: propertyId }
-    });
-
-    if (!property) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Property not found'
-      });
-    }
-
-    // Check if user has completed booking for this property
-    const completedBooking = await prisma.booking.findFirst({
+    // 1. Verify that the user has a completed booking for this property
+    const validBooking = await prisma.booking.findFirst({
       where: {
         propertyId,
         renterId,
-        status: 'COMPLETED',
-        checkOutDate: { lt: new Date() }
+        status: 'ACCEPTED' // Must have an accepted booking to review
       }
     });
 
-    if (!completedBooking) {
-      return res.status(400).json({
+    if (!validBooking) {
+      return res.status(403).json({
         status: 'error',
-        message: 'You can only review properties you have stayed in'
+        message: 'You can only review properties you have booked.'
       });
     }
 
-    // Check if user already reviewed this property
-    const existingReview = await prisma.review.findUnique({
+    // 2. Check if the user has already reviewed this property
+    const existingReview = await prisma.review.findFirst({
       where: {
-        propertyId_renterId: {
-          propertyId,
-          renterId
-        }
+        propertyId,
+        renterId
       }
     });
 
     if (existingReview) {
-      return res.status(400).json({
+      return res.status(409).json({
         status: 'error',
-        message: 'You have already reviewed this property'
+        message: 'You have already submitted a review for this property.'
       });
     }
 
-    // Create review
+    // 3. Create the new review
     const review = await prisma.review.create({
       data: {
         propertyId,
         renterId,
-        rating,
+        rating: parseInt(rating),
         comment
       },
       include: {
@@ -83,7 +68,7 @@ exports.addReview = async (req, res, next) => {
 
     res.status(201).json({
       status: 'success',
-      message: 'Review added successfully',
+      message: 'Review submitted successfully',
       data: { review }
     });
 
@@ -93,16 +78,16 @@ exports.addReview = async (req, res, next) => {
 };
 
 /**
- * @route   GET /api/reviews/property/:id
- * @desc    Get all reviews for a property
+ * @route   GET /api/reviews/:propertyId
+ * @desc    Get all reviews for a specific property
  * @access  Public
  */
 exports.getPropertyReviews = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { propertyId } = req.params;
 
     const reviews = await prisma.review.findMany({
-      where: { propertyId: id },
+      where: { propertyId },
       include: {
         renter: {
           select: {
@@ -112,69 +97,18 @@ exports.getPropertyReviews = async (req, res, next) => {
           }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        createdAt: 'desc'
+      }
     });
-
-    // Calculate average rating
-    const avgRating = reviews.length > 0
-      ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
-      : 0;
 
     res.status(200).json({
       status: 'success',
       results: reviews.length,
-      data: {
-        reviews,
-        averageRating: avgRating.toFixed(1),
-        totalReviews: reviews.length
-      }
+      data: { reviews }
     });
 
   } catch (error) {
     next(error);
   }
 };
-
-/**
- * @route   DELETE /api/reviews/:id
- * @desc    Delete a review
- * @access  Private (Renter/Admin)
- */
-exports.deleteReview = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    const review = await prisma.review.findUnique({
-      where: { id }
-    });
-
-    if (!review) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Review not found'
-      });
-    }
-
-    // Check permissions
-    if (review.renterId !== req.user.id && req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to delete this review'
-      });
-    }
-
-    await prisma.review.delete({
-      where: { id }
-    });
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Review deleted successfully'
-    });
-
-  } catch (error) {
-    next(error);
-  }
-};
-
-module.exports = exports;

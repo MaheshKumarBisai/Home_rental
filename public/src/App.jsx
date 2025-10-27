@@ -42,8 +42,6 @@ function App() {
           {/* Protected Routes - All Users */}
           <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
             <Route path="/bookings" element={<Bookings />} />
-            <Route path="/create-booking" element={<CreateBooking />} />
-            <Route path="/chat/:bookingId" element={<Chat />} />
             <Route path="/profile" element={<Profile />} />
           </Route>
 

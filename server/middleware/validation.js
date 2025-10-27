@@ -66,6 +66,8 @@ const createPropertySchema = Joi.object({
   state: Joi.string().optional(),
   zipCode: Joi.string().optional(),
   type: Joi.string().valid('APARTMENT', 'VILLA', 'HOUSE', 'STUDIO', 'PG', 'CONDO', 'TOWNHOUSE').required(),
+  listingType: Joi.string().valid('RENT', 'SALE').required(),
+  availability: Joi.string().optional().default('Available Now'),
   bedrooms: Joi.number().integer().min(0).required(),
   bathrooms: Joi.number().integer().min(0).required(),
   area: Joi.number().positive().optional(),
@@ -96,14 +98,12 @@ const updatePropertySchema = Joi.object({
 // BOOKING VALIDATION SCHEMAS
 // =====================================
 
-const createBookingSchema = Joi.object({
-  propertyId: Joi.string().uuid().required(),
-  checkInDate: Joi.date().iso().greater('now').required().messages({
-    'date.greater': 'Check-in date must be in the future'
-  }),
-  checkOutDate: Joi.date().iso().greater(Joi.ref('checkInDate')).required().messages({
-    'date.greater': 'Check-out date must be after check-in date'
-  })
+const applyForPropertySchema = Joi.object({
+  propertyId: Joi.string().uuid().required()
+});
+
+const updateApplicationStatusSchema = Joi.object({
+  status: Joi.string().valid('ACCEPTED', 'DENIED').required()
 });
 
 // =====================================
@@ -154,6 +154,7 @@ module.exports = {
   updateProfileSchema,
   createPropertySchema,
   updatePropertySchema,
-  createBookingSchema,
+  applyForPropertySchema,
+  updateApplicationStatusSchema,
   createReviewSchema
 };

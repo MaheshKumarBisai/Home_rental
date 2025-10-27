@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -20,7 +20,7 @@ model User {
   firstName       String
   lastName        String
   phone           String?
-  role            Role      @default(RENTER)
+  role            String      @default("RENTER")
   isBlocked       Boolean   @default(false)
   profileImage    String?
   createdAt       DateTime  @default(now())
@@ -30,18 +30,11 @@ model User {
   properties      Property[]
   bookings        Booking[]
   reviews         Review[]
+  wishlists       Wishlist[]
   refreshTokens   RefreshToken[]
-  sentMessages    Message[] @relation("SentMessages")
-  receivedMessages Message[] @relation("ReceivedMessages")
 
   @@index([email])
   @@map("users")
-}
-
-enum Role {
-  RENTER
-  OWNER
-  ADMIN
 }
 
 // ========================================
@@ -64,45 +57,38 @@ model RefreshToken {
 // PROPERTY MODEL - Rental Properties
 // ========================================
 model Property {
-  id          String   @id @default(uuid())
-  title       String
-  description String   @db.Text
-  price       Float
-  address     String
-  city        String
-  state       String?
-  zipCode     String?
-  type        PropertyType
-  bedrooms    Int
-  bathrooms   Int
-  area        Float?
-  amenities   String[]
-  images      String[]
-  isAvailable Boolean  @default(true)
-  ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String        @id @default(uuid())
+  title            String
+  description      String
+  listingType      String
+  price            Float
+  currency         String        @default("INR")
+  address          String
+  city             String
+  state            String?
+  zipCode          String?
+  type             String
+  bedrooms         Int
+  bathrooms        Int
+  area             Float?
+  amenities        String
+  images           String
+  availability     String        @default("Available Now")
+  ownerId          String
+  owner            User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   // Relations
-  bookings    Booking[]
-  reviews     Review[]
+  bookings         Booking[]
+  reviews          Review[]
+  wishlistedBy     Wishlist[]
 
   @@index([ownerId])
   @@index([city])
   @@index([type])
-  @@index([isAvailable])
+  @@index([listingType])
   @@map("properties")
-}
-
-enum PropertyType {
-  APARTMENT
-  VILLA
-  HOUSE
-  STUDIO
-  PG
-  CONDO
-  TOWNHOUSE
 }
 
 // ========================================
@@ -114,48 +100,17 @@ model Booking {
   property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   renterId     String
   renter       User          @relation(fields: [renterId], references: [id], onDelete: Cascade)
-  checkInDate  DateTime
-  checkOutDate DateTime
-  totalPrice   Float
-  status       BookingStatus @default(CONFIRMED)
+  checkInDate  DateTime?
+  checkOutDate DateTime?
+  totalPrice   Float?
+  status       String @default("PENDING")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-
-  // Relations
-  messages     Message[]
 
   @@index([propertyId])
   @@index([renterId])
   @@index([status])
-  @@index([checkInDate, checkOutDate])
   @@map("bookings")
-}
-
-enum BookingStatus {
-  CONFIRMED
-  CANCELLED
-  COMPLETED
-}
-
-// ========================================
-// MESSAGE MODEL - Real-time Chat
-// ========================================
-model Message {
-  id         String   @id @default(uuid())
-  bookingId  String
-  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  senderId   String
-  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  receiverId String
-  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
-  message    String   @db.Text
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
-
-  @@index([bookingId])
-  @@index([senderId])
-  @@index([receiverId])
-  @@map("messages")
 }
 
 // ========================================
@@ -168,7 +123,7 @@ model Review {
   renterId   String
   renter     User     @relation(fields: [renterId], references: [id], onDelete: Cascade)
   rating     Int
-  comment    String   @db.Text
+  comment    String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -176,4 +131,20 @@ model Review {
   @@index([renterId])
   @@unique([propertyId, renterId])
   @@map("reviews")
+}
+
+// ========================================
+// WISHLIST MODEL - User's Saved Properties
+// ========================================
+model Wishlist {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, propertyId])
+  @@index([userId])
+  @@map("wishlists")
 }

@@ -29,23 +29,25 @@ const Register = () => {
 
   return (
     <div className="w-full max-w-md">
-      <div className="card">
+      <div className="card bg-white">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <Building2 className="h-12 w-12 text-primary-600" />
+            <div className="bg-primary p-3 rounded-full">
+              <Building2 className="h-8 w-8 text-white" />
+            </div>
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-3xl font-bold text-text-primary">
             Create Account
           </h2>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Join us today
+          <p className="text-gray-500 mt-2">
+            Join our community of renters and owners.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 First Name
               </label>
               <input
@@ -54,11 +56,12 @@ const Register = () => {
                 value={formData.firstName}
                 onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                 className="input-field"
+                placeholder="John"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 Last Name
               </label>
               <input
@@ -67,13 +70,14 @@ const Register = () => {
                 value={formData.lastName}
                 onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                 className="input-field"
+                placeholder="Doe"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Email
+            <label className="block text-sm font-medium text-gray-600 mb-2">
+              Email Address
             </label>
             <input
               type="email"
@@ -81,11 +85,12 @@ const Register = () => {
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="input-field"
+              placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-gray-600 mb-2">
               Password
             </label>
             <input
@@ -95,36 +100,37 @@ const Register = () => {
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               className="input-field"
               minLength={8}
+              placeholder="Min. 8 characters"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              I am a
+            <label className="block text-sm font-medium text-gray-600 mb-2">
+              Sign up as a
             </label>
             <select
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value })}
               className="input-field"
             >
-              <option value="RENTER">Renter</option>
-              <option value="OWNER">Property Owner</option>
+              <option value="RENTER">Renter / Tenant</option>
+              <option value="OWNER">Property Owner / Landlord</option>
             </select>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full btn-primary"
+            className="w-full btn-primary mt-2"
           >
-            {loading ? 'Creating account...' : 'Register'}
+            {loading ? 'Creating Account...' : 'Create My Account'}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
+        <p className="mt-6 text-center text-sm text-gray-500">
           Already have an account?{' '}
-          <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium">
-            Login here
+          <Link to="/login" className="text-primary hover:underline font-medium">
+            Log in
           </Link>
         </p>
       </div>

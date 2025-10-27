@@ -97,4 +97,6 @@ const restrictTo = (...roles) => {
   };
 };
 
-module.exports = { protect, restrictTo };
+const isOwnerOrAdmin = restrictTo('OWNER', 'ADMIN');
+
+module.exports = { protect, restrictTo, isOwnerOrAdmin };

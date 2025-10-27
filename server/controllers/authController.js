@@ -40,6 +40,14 @@ exports.register = async (req, res, next) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Validate role
+    if (role && !['RENTER', 'OWNER'].includes(role)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid role specified. Must be RENTER or OWNER.'
+      });
+    }
+
     // Create user
     const user = await prisma.user.create({
       data: {

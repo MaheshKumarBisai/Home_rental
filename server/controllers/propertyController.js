@@ -13,12 +13,18 @@ const prisma = new PrismaClient();
  */
 exports.createProperty = async (req, res, next) => {
   try {
-    const propertyData = req.validatedBody;
+    const { amenities, images, ...propertyData } = req.validatedBody;
     const ownerId = req.user.id;
+
+    // Convert arrays to comma-separated strings for SQLite
+    const amenitiesString = amenities ? amenities.join(',') : '';
+    const imagesString = images ? images.join(',') : '';
 
     const property = await prisma.property.create({
       data: {
         ...propertyData,
+        amenities: amenitiesString,
+        images: imagesString,
         ownerId
       },
       include: {
@@ -88,6 +94,10 @@ exports.getProperty = async (req, res, next) => {
       });
     }
 
+    // Convert string fields back to arrays
+    property.amenities = property.amenities.split(',').filter(Boolean);
+    property.images = property.images.split(',').filter(Boolean);
+
     // Calculate average rating
     const avgRating = property.reviews.length > 0
       ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
@@ -149,14 +159,16 @@ exports.getAllProperties = async (req, res, next) => {
       prisma.property.count({ where })
     ]);
 
-    // Add average rating to each property
-    const propertiesWithRating = properties.map(property => {
+    // Process properties to convert strings to arrays and calculate ratings
+    const processedProperties = properties.map(property => {
       const avgRating = property.reviews.length > 0
         ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
         : 0;
 
       return {
         ...property,
+        amenities: property.amenities.split(',').filter(Boolean),
+        images: property.images.split(',').filter(Boolean),
         averageRating: avgRating.toFixed(1),
         totalReviews: property.reviews.length
       };
@@ -166,7 +178,7 @@ exports.getAllProperties = async (req, res, next) => {
       status: 'success',
       results: properties.length,
       data: {
-        properties: propertiesWithRating,
+        properties: processedProperties,
         pagination: {
           currentPage: page,
           totalPages: Math.ceil(totalCount / limit),
@@ -205,21 +217,19 @@ exports.searchProperties = async (req, res, next) => {
 
     // Build where clause
     const where = {
-      isAvailable: true,
+      availability: { not: "Booked" }, // Only show available properties
       ...(city && { city: { contains: city, mode: 'insensitive' } }),
       ...(type && { type }),
+      ...(listingType && { listingType }),
       ...(priceMin && { price: { gte: parseFloat(priceMin) } }),
       ...(priceMax && { price: { lte: parseFloat(priceMax) } }),
       ...(bedrooms && { bedrooms: { gte: parseInt(bedrooms) } }),
       ...(bathrooms && { bathrooms: { gte: parseInt(bathrooms) } })
     };
 
-    // Handle price range
+    // Handle price range separately for clarity
     if (priceMin && priceMax) {
-      where.price = {
-        gte: parseFloat(priceMin),
-        lte: parseFloat(priceMax)
-      };
+      where.price = { gte: parseFloat(priceMin), lte: parseFloat(priceMax) };
     }
 
     const [properties, totalCount] = await Promise.all([
@@ -245,14 +255,16 @@ exports.searchProperties = async (req, res, next) => {
       prisma.property.count({ where })
     ]);
 
-    // Add average rating
-    const propertiesWithRating = properties.map(property => {
+    // Process properties to convert strings to arrays and calculate ratings
+    const processedProperties = properties.map(property => {
       const avgRating = property.reviews.length > 0
         ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
         : 0;
 
       return {
         ...property,
+        amenities: property.amenities.split(',').filter(Boolean),
+        images: property.images.split(',').filter(Boolean),
         averageRating: avgRating.toFixed(1),
         totalReviews: property.reviews.length
       };
@@ -262,7 +274,7 @@ exports.searchProperties = async (req, res, next) => {
       status: 'success',
       results: properties.length,
       data: {
-        properties: propertiesWithRating,
+        properties: processedProperties,
         pagination: {
           currentPage: parseInt(page),
           totalPages: Math.ceil(totalCount / parseInt(limit)),
@@ -400,14 +412,16 @@ exports.getMyProperties = async (req, res, next) => {
       }
     });
 
-    // Add stats to each property
-    const propertiesWithStats = properties.map(property => {
+    // Process properties to add stats and convert string fields to arrays
+    const processedProperties = properties.map(property => {
       const avgRating = property.reviews.length > 0
         ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
         : 0;
 
       return {
         ...property,
+        amenities: property.amenities.split(',').filter(Boolean),
+        images: property.images.split(',').filter(Boolean),
         averageRating: avgRating.toFixed(1),
         totalReviews: property.reviews.length,
         activeBookings: property.bookings.length
@@ -417,7 +431,7 @@ exports.getMyProperties = async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       results: properties.length,
-      data: { properties: propertiesWithStats }
+      data: { properties: processedProperties }
     });
 
   } catch (error) {
