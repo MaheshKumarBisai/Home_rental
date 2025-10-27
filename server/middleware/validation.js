@@ -71,9 +71,9 @@ const createPropertySchema = Joi.object({
   bedrooms: Joi.number().integer().min(0).required(),
   bathrooms: Joi.number().integer().min(0).required(),
   area: Joi.number().positive().optional(),
-  amenities: Joi.array().items(Joi.string()).optional(),
-  images: Joi.array().items(Joi.string()).min(1).required().messages({
-    'array.min': 'At least one image is required'
+  amenities: Joi.string().optional(),
+  images: Joi.string().required().messages({
+    'any.required': 'At least one image is required'
   })
 });
 
