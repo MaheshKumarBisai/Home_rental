@@ -1,35 +1,22 @@
 const request = require('supertest');
 const app = require('../app');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { User } = require('../models');
 
 describe('Authentication Endpoints', () => {
-  let testRenter;
-  let testOwner;
-
-  beforeAll(async () => {
-    // Clean up database before tests
-    await prisma.user.deleteMany({});
-  });
-
-  afterAll(async () => {
-    await prisma.$disconnect();
-  });
+  let testRenterToken;
 
   // Test data
   const renterData = {
     email: 'renter@test.com',
     password: 'password123',
-    firstName: 'Test',
-    lastName: 'Renter',
+    fullName: 'Test Renter',
     role: 'RENTER',
   };
 
   const ownerData = {
     email: 'owner@test.com',
     password: 'password123',
-    firstName: 'Test',
-    lastName: 'Owner',
+    fullName: 'Test Owner',
     role: 'OWNER',
   };
 
@@ -41,7 +28,6 @@ describe('Authentication Endpoints', () => {
     expect(res.statusCode).toEqual(201);
     expect(res.body.data.user.email).toBe(renterData.email);
     expect(res.body.data.user.role).toBe('RENTER');
-    testRenter = res.body.data;
   });
 
   it('should register a new OWNER successfully', async () => {
@@ -51,7 +37,6 @@ describe('Authentication Endpoints', () => {
     expect(res.statusCode).toEqual(201);
     expect(res.body.data.user.email).toBe(ownerData.email);
     expect(res.body.data.user.role).toBe('OWNER');
-    testOwner = res.body.data;
   });
 
   it('should fail to register a user with a duplicate email', async () => {
@@ -68,6 +53,7 @@ describe('Authentication Endpoints', () => {
       .send({ email: renterData.email, password: renterData.password });
     expect(res.statusCode).toEqual(200);
     expect(res.body.data).toHaveProperty('accessToken');
+    testRenterToken = res.body.data.accessToken;
   });
 
   it('should fail to log in with an incorrect password', async () => {
@@ -75,5 +61,14 @@ describe('Authentication Endpoints', () => {
       .post('/api/auth/login')
       .send({ email: renterData.email, password: 'wrongpassword' });
     expect(res.statusCode).toEqual(401);
+  });
+
+  // Profile Tests
+  it('should get the profile of the logged-in user', async () => {
+    const res = await request(app)
+      .get('/api/auth/profile')
+      .set('Authorization', `Bearer ${testRenterToken}`);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.user.email).toBe(renterData.email);
   });
 });

@@ -3,8 +3,7 @@
  * Handles user authentication and authorization
  */
 
-const bcrypt = require('bcrypt');
-const { PrismaClient } = require('@prisma/client');
+const { User, RefreshToken } = require('../models');
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -14,8 +13,6 @@ const {
   deleteAllUserTokens
 } = require('../utils/tokenUtils');
 
-const prisma = new PrismaClient();
-
 /**
  * @route   POST /api/auth/register
  * @desc    Register new user
@@ -23,12 +20,10 @@ const prisma = new PrismaClient();
  */
 exports.register = async (req, res, next) => {
   try {
-    const { email, password, firstName, lastName, phone, role } = req.validatedBody;
+    const { email, password, fullName, phone, role } = req.body;
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    });
+    const existingUser = await User.findOne({ where: { email } });
 
     if (existingUser) {
       return res.status(400).json({
@@ -36,9 +31,6 @@ exports.register = async (req, res, next) => {
         message: 'User with this email already exists'
       });
     }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Validate role
     if (role && !['RENTER', 'OWNER'].includes(role)) {
@@ -49,23 +41,12 @@ exports.register = async (req, res, next) => {
     }
 
     // Create user
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        phone,
-        role: role || 'RENTER'
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        createdAt: true
-      }
+    const user = await User.create({
+      email,
+      password,
+      fullName,
+      phone,
+      role: role || 'RENTER'
     });
 
     // Generate tokens
@@ -86,7 +67,11 @@ exports.register = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.log(error);
+    res.status(500).json({
+        status: 'error',
+        message: 'Internal server error'
+    });
   }
 };
 
@@ -97,12 +82,10 @@ exports.register = async (req, res, next) => {
  */
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.validatedBody;
+    const { email, password } = req.body;
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { email }
-    });
+    const user = await User.findOne({ where: { email } });
 
     if (!user) {
       return res.status(401).json({
@@ -111,16 +94,8 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // Check if user is blocked
-    if (user.isBlocked) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'Your account has been blocked. Contact admin.'
-      });
-    }
-
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await user.isPasswordMatch(password);
 
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -137,7 +112,7 @@ exports.login = async (req, res, next) => {
     await saveRefreshToken(user.id, refreshToken);
 
     // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
+    const { password: _, ...userWithoutPassword } = user.toJSON();
 
     res.status(200).json({
       status: 'success',
@@ -150,7 +125,11 @@ exports.login = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.log(error);
+    res.status(500).json({
+        status: 'error',
+        message: 'Internal server error'
+    });
   }
 };
 
@@ -198,19 +177,8 @@ exports.refreshToken = async (req, res, next) => {
  */
 exports.getProfile = async (req, res, next) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        role: true,
-        profileImage: true,
-        createdAt: true,
-        updatedAt: true
-      }
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password'] }
     });
 
     res.status(200).json({
@@ -219,7 +187,11 @@ exports.getProfile = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.log(error);
+    res.status(500).json({
+        status: 'error',
+        message: 'Internal server error'
+    });
   }
 };
 
@@ -230,27 +202,18 @@ exports.getProfile = async (req, res, next) => {
  */
 exports.updateProfile = async (req, res, next) => {
   try {
-    const { firstName, lastName, phone, profileImage } = req.validatedBody;
+    const { fullName, phone, avatar } = req.body;
 
-    const updatedUser = await prisma.user.update({
-      where: { id: req.user.id },
-      data: {
-        ...(firstName && { firstName }),
-        ...(lastName && { lastName }),
-        ...(phone && { phone }),
-        ...(profileImage && { profileImage })
+    const [updatedRows, [updatedUser]] = await User.update({
+        fullName,
+        phone,
+        avatar
       },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        role: true,
-        profileImage: true,
-        updatedAt: true
+      {
+        where: { id: req.user.id },
+        returning: true,
       }
-    });
+    );
 
     res.status(200).json({
       status: 'success',
@@ -259,7 +222,11 @@ exports.updateProfile = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.log(error);
+    res.status(500).json({
+        status: 'error',
+        message: 'Internal server error'
+    });
   }
 };
 
@@ -282,6 +249,10 @@ exports.logout = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.log(error);
+    res.status(500).json({
+        status: 'error',
+        message: 'Internal server error'
+    });
   }
 };

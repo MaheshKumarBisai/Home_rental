@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../app');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { User, Property, Booking } = require('../models');
+const { Op } = require('sequelize');
 
 describe('Booking and Application Endpoints', () => {
   let ownerToken, renterToken;
@@ -12,33 +12,43 @@ describe('Booking and Application Endpoints', () => {
   // Setup: Create an OWNER and a RENTER user, and a property
   beforeAll(async () => {
     // Clean up
-    await prisma.user.deleteMany({ where: { email: { contains: '@bookingtest.com' } } });
+    await User.destroy({ where: { email: { [Op.like]: '%@bookingtest.com' } } });
 
     // Create Owner
-    const ownerRes = await request(app)
+    await request(app)
       .post('/api/auth/register')
       .send({
         email: 'owner@bookingtest.com',
         password: 'password123',
-        firstName: 'Booking',
-        lastName: 'Owner',
+        fullName: 'Booking Owner',
         role: 'OWNER',
       });
-    ownerToken = ownerRes.body.data.accessToken;
-    ownerId = ownerRes.body.data.user.id;
+    const ownerLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+            email: 'owner@bookingtest.com',
+            password: 'password123',
+        });
+    ownerToken = ownerLoginRes.body.data.accessToken;
+    ownerId = ownerLoginRes.body.data.user.id;
 
     // Create Renter
-    const renterRes = await request(app)
+    await request(app)
       .post('/api/auth/register')
       .send({
         email: 'renter@bookingtest.com',
         password: 'password123',
-        firstName: 'Booking',
-        lastName: 'Renter',
+        fullName: 'Booking Renter',
         role: 'RENTER',
       });
-    renterToken = renterRes.body.data.accessToken;
-    renterId = renterRes.body.data.user.id;
+    const renterLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+            email: 'renter@bookingtest.com',
+            password: 'password123',
+        });
+    renterToken = renterLoginRes.body.data.accessToken;
+    renterId = renterLoginRes.body.data.user.id;
 
     // Create Property
     const propertyRes = await request(app)
@@ -54,17 +64,10 @@ describe('Booking and Application Endpoints', () => {
         city: 'Booksville',
         bedrooms: 1,
         bathrooms: 1,
-        amenities: 'Test',
-        images: 'test.jpg',
+        amenities: ['Test'],
+        images: ['http://example.com/test.jpg'],
       });
     propertyId = propertyRes.body.data.property.id;
-  });
-
-  afterAll(async () => {
-    await prisma.property.deleteMany({ where: { ownerId } });
-    await prisma.user.deleteMany({ where: { id: ownerId } });
-    await prisma.user.deleteMany({ where: { id: renterId } });
-    await prisma.$disconnect();
   });
 
   it('should allow a RENTER to apply for a property', async () => {

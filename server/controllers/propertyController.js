@@ -3,8 +3,8 @@
  * Handles property CRUD operations
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { Property, User, Review, Booking } = require('../models');
+const { Op } = require('sequelize');
 
 /**
  * @route   POST /api/properties/create
@@ -13,40 +13,37 @@ const prisma = new PrismaClient();
  */
 exports.createProperty = async (req, res, next) => {
   try {
-    const { amenities, images, ...propertyData } = req.validatedBody;
+    const { amenities, images, ...propertyData } = req.body;
     const ownerId = req.user.id;
 
     // Convert arrays to comma-separated strings for SQLite
     const amenitiesString = amenities ? amenities.join(',') : '';
     const imagesString = images ? images.join(',') : '';
 
-    const property = await prisma.property.create({
-      data: {
-        ...propertyData,
-        amenities: amenitiesString,
-        images: imagesString,
-        ownerId
-      },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
+    const property = await Property.create({
+      ...propertyData,
+      amenities: amenitiesString,
+      images: imagesString,
+      ownerId
+    });
+
+    const propertyWithOwner = await Property.findByPk(property.id, {
+        include: {
+            model: User,
+            as: 'owner',
+            attributes: ['id', 'fullName', 'email']
         }
-      }
     });
 
     res.status(201).json({
       status: 'success',
       message: 'Property created successfully',
-      data: { property }
+      data: { property: propertyWithOwner }
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in createProperty:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -59,32 +56,24 @@ exports.getProperty = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const property = await prisma.property.findUnique({
-      where: { id },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            profileImage: true
-          }
+    const property = await Property.findByPk(id, {
+      include: [
+        {
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'fullName', 'email', 'phone', 'avatar']
         },
-        reviews: {
+        {
+          model: Review,
+          as: 'reviews',
           include: {
-            renter: {
-              select: {
-                firstName: true,
-                lastName: true,
-                profileImage: true
-              }
-            }
+            model: User,
+            as: 'renter',
+            attributes: ['fullName', 'avatar']
           },
-          orderBy: { createdAt: 'desc' }
+          order: [['createdAt', 'DESC']]
         }
-      }
+      ]
     });
 
     if (!property) {
@@ -95,8 +84,9 @@ exports.getProperty = async (req, res, next) => {
     }
 
     // Convert string fields back to arrays
-    property.amenities = property.amenities.split(',').filter(Boolean);
-    property.images = property.images.split(',').filter(Boolean);
+    const propertyJson = property.toJSON();
+    propertyJson.amenities = property.amenities ? property.amenities.split(',') : [];
+    propertyJson.images = property.images ? property.images.split(',') : [];
 
     // Calculate average rating
     const avgRating = property.reviews.length > 0
@@ -107,7 +97,7 @@ exports.getProperty = async (req, res, next) => {
       status: 'success',
       data: {
         property: {
-          ...property,
+          ...propertyJson,
           averageRating: avgRating.toFixed(1),
           totalReviews: property.reviews.length
         }
@@ -115,7 +105,8 @@ exports.getProperty = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in getProperty:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -128,47 +119,44 @@ exports.getAllProperties = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
     const sortBy = req.query.sortBy || 'createdAt';
-    const order = req.query.order === 'asc' ? 'asc' : 'desc';
+    const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
 
     const where = {
-      isAvailable: true
+      availability: { [Op.ne]: "Booked" }
     };
 
-    const [properties, totalCount] = await Promise.all([
-      prisma.property.findMany({
+    const { count, rows: properties } = await Property.findAndCountAll({
         where,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: order },
-        include: {
-          owner: {
-            select: {
-              firstName: true,
-              lastName: true
+        offset,
+        limit,
+        order: [[sortBy, order]],
+        include: [
+            {
+                model: User,
+                as: 'owner',
+                attributes: ['fullName']
+            },
+            {
+                model: Review,
+                as: 'reviews',
+                attributes: ['rating']
             }
-          },
-          reviews: {
-            select: {
-              rating: true
-            }
-          }
-        }
-      }),
-      prisma.property.count({ where })
-    ]);
+        ]
+    });
 
     // Process properties to convert strings to arrays and calculate ratings
     const processedProperties = properties.map(property => {
+      const propertyJson = property.toJSON();
       const avgRating = property.reviews.length > 0
         ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
         : 0;
 
       return {
-        ...property,
-        amenities: property.amenities.split(',').filter(Boolean),
-        images: property.images.split(',').filter(Boolean),
+        ...propertyJson,
+        amenities: property.amenities ? property.amenities.split(',') : [],
+        images: property.images ? property.images.split(',') : [],
         averageRating: avgRating.toFixed(1),
         totalReviews: property.reviews.length
       };
@@ -181,15 +169,16 @@ exports.getAllProperties = async (req, res, next) => {
         properties: processedProperties,
         pagination: {
           currentPage: page,
-          totalPages: Math.ceil(totalCount / limit),
-          totalItems: totalCount,
+          totalPages: Math.ceil(count / limit),
+          totalItems: count,
           itemsPerPage: limit
         }
       }
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in getAllProperties:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -203,6 +192,7 @@ exports.searchProperties = async (req, res, next) => {
     const {
       city,
       type,
+      listingType,
       priceMin,
       priceMax,
       bedrooms,
@@ -213,58 +203,55 @@ exports.searchProperties = async (req, res, next) => {
       limit = 10
     } = req.query;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     // Build where clause
     const where = {
-      availability: { not: "Booked" }, // Only show available properties
-      ...(city && { city: { contains: city, mode: 'insensitive' } }),
+      availability: { [Op.ne]: "Booked" },
+      ...(city && { city: { [Op.like]: `%${city}%` } }),
       ...(type && { type }),
       ...(listingType && { listingType }),
-      ...(priceMin && { price: { gte: parseFloat(priceMin) } }),
-      ...(priceMax && { price: { lte: parseFloat(priceMax) } }),
-      ...(bedrooms && { bedrooms: { gte: parseInt(bedrooms) } }),
-      ...(bathrooms && { bathrooms: { gte: parseInt(bathrooms) } })
+      ...(bedrooms && { bedrooms: { [Op.gte]: parseInt(bedrooms) } }),
+      ...(bathrooms && { bathrooms: { [Op.gte]: parseInt(bathrooms) } })
     };
 
-    // Handle price range separately for clarity
     if (priceMin && priceMax) {
-      where.price = { gte: parseFloat(priceMin), lte: parseFloat(priceMax) };
+      where.price = { [Op.between]: [parseFloat(priceMin), parseFloat(priceMax)] };
+    } else if (priceMin) {
+      where.price = { [Op.gte]: parseFloat(priceMin) };
+    } else if (priceMax) {
+      where.price = { [Op.lte]: parseFloat(priceMax) };
     }
 
-    const [properties, totalCount] = await Promise.all([
-      prisma.property.findMany({
+    const { count, rows: properties } = await Property.findAndCountAll({
         where,
-        skip,
-        take: parseInt(limit),
-        orderBy: { [sortBy]: order },
-        include: {
-          owner: {
-            select: {
-              firstName: true,
-              lastName: true
+        offset,
+        limit: parseInt(limit),
+        order: [[sortBy, order.toUpperCase()]],
+        include: [
+            {
+                model: User,
+                as: 'owner',
+                attributes: ['fullName']
+            },
+            {
+                model: Review,
+                as: 'reviews',
+                attributes: ['rating']
             }
-          },
-          reviews: {
-            select: {
-              rating: true
-            }
-          }
-        }
-      }),
-      prisma.property.count({ where })
-    ]);
+        ]
+    });
 
-    // Process properties to convert strings to arrays and calculate ratings
     const processedProperties = properties.map(property => {
+      const propertyJson = property.toJSON();
       const avgRating = property.reviews.length > 0
         ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
         : 0;
 
       return {
-        ...property,
-        amenities: property.amenities.split(',').filter(Boolean),
-        images: property.images.split(',').filter(Boolean),
+        ...propertyJson,
+        amenities: property.amenities ? property.amenities.split(',') : [],
+        images: property.images ? property.images.split(',') : [],
         averageRating: avgRating.toFixed(1),
         totalReviews: property.reviews.length
       };
@@ -277,15 +264,16 @@ exports.searchProperties = async (req, res, next) => {
         properties: processedProperties,
         pagination: {
           currentPage: parseInt(page),
-          totalPages: Math.ceil(totalCount / parseInt(limit)),
-          totalItems: totalCount,
+          totalPages: Math.ceil(count / parseInt(limit)),
+          totalItems: count,
           itemsPerPage: parseInt(limit)
         }
       }
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in searchProperties:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -297,39 +285,23 @@ exports.searchProperties = async (req, res, next) => {
 exports.updateProperty = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const updateData = req.validatedBody;
+    const updateData = req.body;
 
-    // Check if property exists and user is owner
-    const property = await prisma.property.findUnique({
-      where: { id }
-    });
+    const property = await Property.findByPk(id);
 
     if (!property) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Property not found'
-      });
+      return res.status(404).json({ status: 'error', message: 'Property not found' });
     }
 
     if (property.ownerId !== req.user.id && req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to update this property'
-      });
+      return res.status(403).json({ status: 'error', message: 'You do not have permission to update this property' });
     }
 
-    const updatedProperty = await prisma.property.update({
+    await Property.update(updateData, {
       where: { id },
-      data: updateData,
-      include: {
-        owner: {
-          select: {
-            firstName: true,
-            lastName: true
-          }
-        }
-      }
     });
+
+    const updatedProperty = await Property.findByPk(id);
 
     res.status(200).json({
       status: 'success',
@@ -338,7 +310,8 @@ exports.updateProperty = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in updateProperty:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -351,36 +324,23 @@ exports.deleteProperty = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // Check if property exists and user is owner
-    const property = await prisma.property.findUnique({
-      where: { id }
-    });
+    const property = await Property.findByPk(id);
 
     if (!property) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Property not found'
-      });
+      return res.status(404).json({ status: 'error', message: 'Property not found' });
     }
 
     if (property.ownerId !== req.user.id && req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        status: 'error',
-        message: 'You do not have permission to delete this property'
-      });
+      return res.status(403).json({ status: 'error', message: 'You do not have permission to delete this property' });
     }
 
-    await prisma.property.delete({
-      where: { id }
-    });
+    await Property.destroy({ where: { id } });
 
-    res.status(200).json({
-      status: 'success',
-      message: 'Property deleted successfully'
-    });
+    res.status(200).json({ status: 'success', message: 'Property deleted successfully' });
 
   } catch (error) {
-    next(error);
+    console.error('Error in deleteProperty:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -391,37 +351,25 @@ exports.deleteProperty = async (req, res, next) => {
  */
 exports.getMyProperties = async (req, res, next) => {
   try {
-    const properties = await prisma.property.findMany({
-      where: {
-        ownerId: req.user.id
-      },
-      include: {
-        reviews: {
-          select: {
-            rating: true
-          }
-        },
-        bookings: {
-          where: {
-            status: 'CONFIRMED'
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
+    const properties = await Property.findAll({
+      where: { ownerId: req.user.id },
+      include: [
+        { model: Review, as: 'reviews', attributes: ['rating'] },
+        { model: Booking, as: 'bookings', where: { status: 'CONFIRMED' }, required: false }
+      ],
+      order: [['createdAt', 'DESC']]
     });
 
-    // Process properties to add stats and convert string fields to arrays
     const processedProperties = properties.map(property => {
+      const propertyJson = property.toJSON();
       const avgRating = property.reviews.length > 0
         ? property.reviews.reduce((sum, review) => sum + review.rating, 0) / property.reviews.length
         : 0;
 
       return {
-        ...property,
-        amenities: property.amenities.split(',').filter(Boolean),
-        images: property.images.split(',').filter(Boolean),
+        ...propertyJson,
+        amenities: property.amenities ? property.amenities.split(',') : [],
+        images: property.images ? property.images.split(',') : [],
         averageRating: avgRating.toFixed(1),
         totalReviews: property.reviews.length,
         activeBookings: property.bookings.length
@@ -435,7 +383,8 @@ exports.getMyProperties = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in getMyProperties:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 

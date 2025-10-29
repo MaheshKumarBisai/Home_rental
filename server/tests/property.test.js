@@ -1,7 +1,6 @@
 const request = require('supertest');
 const app = require('../app');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { User, Property } = require('../models');
 
 describe('Property Endpoints', () => {
   let ownerToken;
@@ -10,24 +9,23 @@ describe('Property Endpoints', () => {
 
   // Setup: Create an OWNER user and get a token
   beforeAll(async () => {
-    await prisma.user.deleteMany({ where: { email: 'propertyowner@test.com' } });
-    const ownerRes = await request(app)
+    await User.destroy({ where: { email: 'propertyowner@test.com' } });
+    await request(app)
       .post('/api/auth/register')
       .send({
         email: 'propertyowner@test.com',
         password: 'password123',
-        firstName: 'Property',
-        lastName: 'Owner',
+        fullName: 'Property Owner',
         role: 'OWNER',
       });
-    ownerToken = ownerRes.body.data.accessToken;
-    ownerId = ownerRes.body.data.user.id;
-  });
-
-  afterAll(async () => {
-    await prisma.property.deleteMany({ where: { ownerId } });
-    await prisma.user.deleteMany({ where: { id: ownerId } });
-    await prisma.$disconnect();
+    const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+            email: 'propertyowner@test.com',
+            password: 'password123',
+        });
+    ownerToken = loginRes.body.data.accessToken;
+    ownerId = loginRes.body.data.user.id;
   });
 
   // Test data for a new property
@@ -41,8 +39,8 @@ describe('Property Endpoints', () => {
     city: 'Testville',
     bedrooms: 2,
     bathrooms: 2,
-    amenities: 'WiFi,Parking',
-    images: 'image1.jpg,image2.jpg',
+    amenities: ['WiFi', 'Parking'],
+    images: ['http://example.com/image1.jpg', 'http://example.com/image2.jpg'],
   };
 
   it('should allow an OWNER to create a new property', async () => {

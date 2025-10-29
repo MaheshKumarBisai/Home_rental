@@ -3,8 +3,7 @@
  * Handles user's saved/wishlisted properties
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { Wishlist, Property } = require('../models');
 
 /**
  * @route   POST /api/wishlist/add
@@ -17,13 +16,13 @@ exports.addToWishlist = async (req, res, next) => {
     const userId = req.user.id;
 
     // Check if the property exists
-    const property = await prisma.property.findUnique({ where: { id: propertyId } });
+    const property = await Property.findByPk(propertyId);
     if (!property) {
       return res.status(404).json({ status: 'error', message: 'Property not found' });
     }
 
     // Check if it's already in the wishlist
-    const existingWishlistItem = await prisma.wishlist.findFirst({
+    const existingWishlistItem = await Wishlist.findOne({
       where: { userId, propertyId }
     });
 
@@ -32,28 +31,23 @@ exports.addToWishlist = async (req, res, next) => {
     }
 
     // Add to wishlist
-    const wishlistItem = await prisma.wishlist.create({
-      data: {
-        userId,
-        propertyId
-      },
-      include: {
-        property: {
-          select: {
-            id: true,
-            title: true,
-            city: true,
-            price: true,
-            images: true
-          }
+    const wishlistItem = await Wishlist.create({
+      userId,
+      propertyId
+    });
+
+    const wishlistItemWithProperty = await Wishlist.findByPk(wishlistItem.id, {
+        include: {
+            model: Property,
+            as: 'property',
+            attributes: ['id', 'title', 'city', 'price', 'images']
         }
-      }
     });
 
     res.status(201).json({
       status: 'success',
       message: 'Property added to wishlist',
-      data: { wishlistItem }
+      data: { wishlistItem: wishlistItemWithProperty }
     });
 
   } catch (error) {
@@ -72,7 +66,7 @@ exports.removeFromWishlist = async (req, res, next) => {
     const userId = req.user.id;
 
     // Find the wishlist item to ensure it exists before deleting
-    const wishlistItem = await prisma.wishlist.findFirst({
+    const wishlistItem = await Wishlist.findOne({
       where: {
         userId,
         propertyId
@@ -87,7 +81,7 @@ exports.removeFromWishlist = async (req, res, next) => {
     }
 
     // Delete the wishlist item
-    await prisma.wishlist.delete({
+    await Wishlist.destroy({
       where: {
         id: wishlistItem.id
       }
@@ -112,33 +106,21 @@ exports.getWishlist = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const wishlist = await prisma.wishlist.findMany({
+    const wishlist = await Wishlist.findAll({
       where: { userId },
       include: {
-        property: {
-          select: {
-            id: true,
-            title: true,
-            city: true,
-            price: true,
-            images: true,
-            listingType: true,
-            bedrooms: true,
-            bathrooms: true,
-            availability: true
-          }
-        }
+        model: Property,
+        as: 'property',
+        attributes: ['id', 'title', 'city', 'price', 'images', 'listingType', 'bedrooms', 'bathrooms', 'availability']
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      order: [['createdAt', 'DESC']]
     });
 
     // Process properties to convert images string to array
     const processedWishlist = wishlist.map(item => ({
-      ...item,
+      ...item.toJSON(),
       property: {
-        ...item.property,
+        ...item.property.toJSON(),
         images: item.property.images.split(',').filter(Boolean)
       }
     }));

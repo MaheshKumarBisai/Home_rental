@@ -3,8 +3,7 @@
  * Handles property reviews and ratings
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { Review, Booking, User } = require('../models');
 
 /**
  * @route   POST /api/reviews/add
@@ -17,7 +16,7 @@ exports.createReview = async (req, res, next) => {
     const renterId = req.user.id;
 
     // 1. Verify that the user has a completed booking for this property
-    const validBooking = await prisma.booking.findFirst({
+    const validBooking = await Booking.findOne({
       where: {
         propertyId,
         renterId,
@@ -33,7 +32,7 @@ exports.createReview = async (req, res, next) => {
     }
 
     // 2. Check if the user has already reviewed this property
-    const existingReview = await prisma.review.findFirst({
+    const existingReview = await Review.findOne({
       where: {
         propertyId,
         renterId
@@ -48,28 +47,25 @@ exports.createReview = async (req, res, next) => {
     }
 
     // 3. Create the new review
-    const review = await prisma.review.create({
-      data: {
-        propertyId,
-        renterId,
-        rating: parseInt(rating),
-        comment
-      },
-      include: {
-        renter: {
-          select: {
-            firstName: true,
-            lastName: true,
-            profileImage: true
-          }
+    const review = await Review.create({
+      propertyId,
+      renterId,
+      rating: parseInt(rating),
+      comment
+    });
+
+    const reviewWithRenter = await Review.findByPk(review.id, {
+        include: {
+            model: User,
+            as: 'renter',
+            attributes: ['fullName', 'avatar']
         }
-      }
     });
 
     res.status(201).json({
       status: 'success',
       message: 'Review submitted successfully',
-      data: { review }
+      data: { review: reviewWithRenter }
     });
 
   } catch (error) {
@@ -80,26 +76,20 @@ exports.createReview = async (req, res, next) => {
 /**
  * @route   GET /api/reviews/:propertyId
  * @desc    Get all reviews for a specific property
- * @access  Public
+ *access  Public
  */
 exports.getPropertyReviews = async (req, res, next) => {
   try {
     const { propertyId } = req.params;
 
-    const reviews = await prisma.review.findMany({
+    const reviews = await Review.findAll({
       where: { propertyId },
       include: {
-        renter: {
-          select: {
-            firstName: true,
-            lastName: true,
-            profileImage: true
-          }
-        }
+        model: User,
+        as: 'renter',
+        attributes: ['fullName', 'avatar']
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      order: [['createdAt', 'DESC']]
     });
 
     res.status(200).json({

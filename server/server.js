@@ -6,6 +6,7 @@
 const app = require('./app');
 const http = require('http');
 const { Server } = require('socket.io');
+const { Message, User } = require('./models');
 require('dotenv').config();
 
 const PORT = process.env.PORT || 5000;
@@ -33,35 +34,27 @@ io.on('connection', (socket) => {
   });
 
   // Handle sending messages
-  socket.on('sendMessage', async ({ bookingId, senderId, receiverId, message }) => {
+  socket.on('sendMessage', async ({ bookingId, senderId, receiverId, content }) => {
     try {
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
-
       // Save message to database
-      const newMessage = await prisma.message.create({
-        data: {
-          bookingId,
-          senderId,
-          receiverId,
-          message
-        },
+      const newMessage = await Message.create({
+        bookingId,
+        senderId,
+        receiverId,
+        content
+      });
+
+      const messageWithSender = await Message.findByPk(newMessage.id, {
         include: {
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profileImage: true
-            }
-          }
+            model: User,
+            as: 'sender',
+            attributes: ['id', 'fullName', 'avatar']
         }
       });
 
       // Emit message to all users in the booking room
-      io.to(bookingId).emit('receiveMessage', newMessage);
+      io.to(bookingId).emit('receiveMessage', messageWithSender);
 
-      await prisma.$disconnect();
     } catch (error) {
       console.error('Socket message error:', error);
       socket.emit('messageError', { error: 'Failed to send message' });
