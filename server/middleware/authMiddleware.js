@@ -4,8 +4,7 @@
  */
 
 const jwt = require('jsonwebtoken');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { User } = require('../models');
 
 /**
  * Protect routes - Verify JWT access token
@@ -31,30 +30,14 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
     // Check if user still exists
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isBlocked: true
-      }
+    const user = await User.findByPk(decoded.userId, {
+        attributes: ['id', 'email', 'fullName', 'role']
     });
 
     if (!user) {
       return res.status(401).json({
         status: 'error',
         message: 'User no longer exists.'
-      });
-    }
-
-    // Check if user is blocked
-    if (user.isBlocked) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'Your account has been blocked. Contact admin.'
       });
     }
 
@@ -97,4 +80,6 @@ const restrictTo = (...roles) => {
   };
 };
 
-module.exports = { protect, restrictTo };
+const isOwnerOrAdmin = restrictTo('OWNER', 'ADMIN');
+
+module.exports = { protect, restrictTo, isOwnerOrAdmin };

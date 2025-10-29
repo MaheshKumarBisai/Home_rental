@@ -3,71 +3,21 @@
  * Handles property bookings with double-booking prevention
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { Booking, Property, User } = require('../models');
+const { Op } = require('sequelize');
 
 /**
- * Check for date conflicts
+ * @route   POST /api/bookings/apply
+ * @desc    Apply for a property
+ * @access  Private (Renter)
  */
-const checkDateConflict = async (propertyId, checkInDate, checkOutDate, excludeBookingId = null) => {
-  const conflictingBooking = await prisma.booking.findFirst({
-    where: {
-      propertyId,
-      status: 'CONFIRMED',
-      ...(excludeBookingId && { id: { not: excludeBookingId } }),
-      OR: [
-        {
-          // New booking starts during existing booking
-          AND: [
-            { checkInDate: { lte: checkInDate } },
-            { checkOutDate: { gt: checkInDate } }
-          ]
-        },
-        {
-          // New booking ends during existing booking
-          AND: [
-            { checkInDate: { lt: checkOutDate } },
-            { checkOutDate: { gte: checkOutDate } }
-          ]
-        },
-        {
-          // New booking completely covers existing booking
-          AND: [
-            { checkInDate: { gte: checkInDate } },
-            { checkOutDate: { lte: checkOutDate } }
-          ]
-        }
-      ]
-    }
-  });
-
-  return conflictingBooking !== null;
-};
-
-/**
- * Calculate total price
- */
-const calculateTotalPrice = (checkInDate, checkOutDate, pricePerNight) => {
-  const checkIn = new Date(checkInDate);
-  const checkOut = new Date(checkOutDate);
-  const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-  return nights * pricePerNight;
-};
-
-/**
- * @route   POST /api/bookings/create
- * @desc    Create new booking
- * @access  Private
- */
-exports.createBooking = async (req, res, next) => {
+exports.applyForProperty = async (req, res, next) => {
   try {
-    const { propertyId, checkInDate, checkOutDate } = req.validatedBody;
+    const { propertyId } = req.body;
     const renterId = req.user.id;
 
     // Check if property exists
-    const property = await prisma.property.findUnique({
-      where: { id: propertyId }
-    });
+    const property = await Property.findByPk(propertyId);
 
     if (!property) {
       return res.status(404).json({
@@ -77,10 +27,10 @@ exports.createBooking = async (req, res, next) => {
     }
 
     // Check if property is available
-    if (!property.isAvailable) {
+    if (property.availability === 'Booked') {
       return res.status(400).json({
         status: 'error',
-        message: 'Property is not available for booking'
+        message: 'Property is no longer available'
       });
     }
 
@@ -88,60 +38,49 @@ exports.createBooking = async (req, res, next) => {
     if (property.ownerId === renterId) {
       return res.status(400).json({
         status: 'error',
-        message: 'You cannot book your own property'
+        message: 'You cannot apply for your own property'
       });
     }
 
-    // Check for date conflicts (PREVENT DOUBLE-BOOKING)
-    const hasConflict = await checkDateConflict(propertyId, new Date(checkInDate), new Date(checkOutDate));
-
-    if (hasConflict) {
-      return res.status(409).json({
-        status: 'error',
-        message: 'Property is already booked for selected dates. Please choose different dates.'
-      });
-    }
-
-    // Calculate total price
-    const totalPrice = calculateTotalPrice(checkInDate, checkOutDate, property.price);
-
-    // Create booking
-    const booking = await prisma.booking.create({
-      data: {
-        propertyId,
-        renterId,
-        checkInDate: new Date(checkInDate),
-        checkOutDate: new Date(checkOutDate),
-        totalPrice,
-        status: 'CONFIRMED'
-      },
-      include: {
-        property: {
-          select: {
-            title: true,
-            address: true,
-            city: true,
-            images: true
-          }
-        },
-        renter: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true
-          }
+    // Check if user has already applied for this property
+    const existingApplication = await Booking.findOne({
+        where: {
+            propertyId,
+            renterId
         }
-      }
+    });
+
+    if (existingApplication) {
+        return res.status(409).json({
+            status: 'error',
+            message: 'You have already applied for this property.'
+        });
+    }
+
+    // Create application (booking with PENDING status)
+    const application = await Booking.create({
+      propertyId,
+      renterId,
+      status: 'PENDING'
+    });
+
+    const applicationWithProperty = await Booking.findByPk(application.id, {
+        include: {
+            model: Property,
+            as: 'property',
+            attributes: ['title', 'address', 'city']
+        }
     });
 
     res.status(201).json({
       status: 'success',
-      message: 'Booking created successfully',
-      data: { booking }
+      message: 'Application submitted successfully',
+      data: { application: applicationWithProperty }
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in applyForProperty:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -155,28 +94,21 @@ exports.getUserBookings = async (req, res, next) => {
     const { id } = req.params;
 
     // Check if user can access these bookings
-    if (req.user.id !== id && req.user.role !== 'ADMIN') {
+    if (req.user.id !== parseInt(id) && req.user.role !== 'ADMIN') {
       return res.status(403).json({
         status: 'error',
         message: 'You do not have permission to view these bookings'
       });
     }
 
-    const bookings = await prisma.booking.findMany({
+    const bookings = await Booking.findAll({
       where: { renterId: id },
       include: {
-        property: {
-          select: {
-            id: true,
-            title: true,
-            address: true,
-            city: true,
-            images: true,
-            price: true
-          }
-        }
+        model: Property,
+        as: 'property',
+        attributes: ['id', 'title', 'address', 'city', 'images', 'price']
       },
-      orderBy: { createdAt: 'desc' }
+      order: [['createdAt', 'DESC']]
     });
 
     res.status(200).json({
@@ -186,7 +118,8 @@ exports.getUserBookings = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in getUserBookings:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -200,9 +133,7 @@ exports.getPropertyBookings = async (req, res, next) => {
     const { id } = req.params;
 
     // Check if property exists
-    const property = await prisma.property.findUnique({
-      where: { id }
-    });
+    const property = await Property.findByPk(id);
 
     if (!property) {
       return res.status(404).json({
@@ -219,21 +150,14 @@ exports.getPropertyBookings = async (req, res, next) => {
       });
     }
 
-    const bookings = await prisma.booking.findMany({
+    const bookings = await Booking.findAll({
       where: { propertyId: id },
       include: {
-        renter: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            profileImage: true
-          }
-        }
+        model: User,
+        as: 'renter',
+        attributes: ['id', 'fullName', 'email', 'phone', 'avatar']
       },
-      orderBy: { createdAt: 'desc' }
+      order: [['createdAt', 'DESC']]
     });
 
     res.status(200).json({
@@ -243,7 +167,8 @@ exports.getPropertyBookings = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in getPropertyBookings:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -256,34 +181,23 @@ exports.getBookingDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const booking = await prisma.booking.findUnique({
-      where: { id },
-      include: {
-        property: {
-          include: {
-            owner: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                phone: true,
-                profileImage: true
-              }
+    const booking = await Booking.findByPk(id, {
+        include: [
+            {
+                model: Property,
+                as: 'property',
+                include: {
+                    model: User,
+                    as: 'owner',
+                    attributes: ['id', 'fullName', 'email', 'phone', 'avatar']
+                }
+            },
+            {
+                model: User,
+                as: 'renter',
+                attributes: ['id', 'fullName', 'email', 'phone', 'avatar']
             }
-          }
-        },
-        renter: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            profileImage: true
-          }
-        }
-      }
+        ]
     });
 
     if (!booking) {
@@ -311,7 +225,8 @@ exports.getBookingDetails = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in getBookingDetails:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 
@@ -325,10 +240,7 @@ exports.cancelBooking = async (req, res, next) => {
     const { id } = req.params;
 
     // Find booking
-    const booking = await prisma.booking.findUnique({
-      where: { id },
-      include: { property: true }
-    });
+    const booking = await Booking.findByPk(id, { include: 'property' });
 
     if (!booking) {
       return res.status(404).json({
@@ -358,10 +270,8 @@ exports.cancelBooking = async (req, res, next) => {
     }
 
     // Update booking status
-    const cancelledBooking = await prisma.booking.update({
-      where: { id },
-      data: { status: 'CANCELLED' }
-    });
+    await Booking.update({ status: 'CANCELLED' }, { where: { id }});
+    const cancelledBooking = await Booking.findByPk(id);
 
     res.status(200).json({
       status: 'success',
@@ -370,7 +280,111 @@ exports.cancelBooking = async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('Error in cancelBooking:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
+  }
+};
+
+/**
+ * @route   PUT /api/bookings/applications/:id/status
+ * @desc    Update application status (Accept/Deny)
+ * @access  Private (Owner/Admin)
+ */
+exports.updateApplicationStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // Expects "ACCEPTED" or "DENIED"
+
+    if (!['ACCEPTED', 'DENIED'].includes(status)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid status. Must be ACCEPTED or DENIED.'
+      });
+    }
+
+    // Find the application/booking
+    const application = await Booking.findByPk(id, { include: 'property' });
+
+    if (!application) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Application not found'
+      });
+    }
+
+    // Check permissions (only property owner or admin can decide)
+    if (application.property.ownerId !== req.user.id && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to update this application'
+      });
+    }
+
+    // Update the application status
+    await Booking.update({ status }, { where: { id }});
+    const updatedApplication = await Booking.findByPk(id);
+
+    // If accepted, update property availability and deny other applications
+    if (status === 'ACCEPTED') {
+      // Mark property as booked
+      await Property.update({ availability: 'Booked' }, { where: { id: application.propertyId } });
+
+      // Deny other pending applications for this property
+      await Booking.update({ status: 'DENIED' }, {
+        where: {
+          propertyId: application.propertyId,
+          status: 'PENDING',
+          id: { [Op.ne]: id } // Exclude the current application
+        }
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: `Application has been ${status.toLowerCase()}.`,
+      data: { application: updatedApplication }
+    });
+
+  } catch (error) {
+    console.error('Error in updateApplicationStatus:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
+  }
+};
+
+/**
+ * @route   GET /api/bookings/owner
+ * @desc    Get all bookings for all properties of the logged-in owner
+ * @access  Private (Owner)
+ */
+exports.getOwnerBookings = async (req, res, next) => {
+  try {
+    const ownerId = req.user.id;
+
+    const bookings = await Booking.findAll({
+      include: [
+        {
+          model: Property,
+          as: 'property',
+          where: { ownerId },
+          attributes: ['id', 'title', 'city']
+        },
+        {
+          model: User,
+          as: 'renter',
+          attributes: ['id', 'fullName', 'email']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.status(200).json({
+      status: 'success',
+      results: bookings.length,
+      data: { bookings },
+    });
+  } catch (error) {
+    console.error('Error in getOwnerBookings:', error);
+    res.status(500).json({ status: 'error', message: 'Internal Server Error' });
   }
 };
 

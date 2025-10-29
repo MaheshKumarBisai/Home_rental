@@ -18,6 +18,8 @@ const CreateProperty = () => {
     state: '',
     zipCode: '',
     type: 'APARTMENT',
+    listingType: 'RENT',
+    availability: 'Available Now',
     bedrooms: 1,
     bathrooms: 1,
     area: '',
@@ -109,24 +111,26 @@ const CreateProperty = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-          <Building2 className="h-8 w-8 text-primary-600" />
+      <div className="mb-8 text-center">
+        <div className="inline-block bg-primary p-3 rounded-full mb-2">
+          <Building2 className="h-8 w-8 text-white" />
+        </div>
+        <h1 className="text-3xl font-bold text-text-primary">
           Create New Property Listing
         </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Fill in the details to list your property
+        <p className="text-gray-500 mt-2">
+          Fill in the details below to publish your property.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Basic Information</h2>
+        <div className="card bg-white">
+          <h2 className="text-xl font-semibold mb-4 text-text-primary border-b pb-2">Basic Information</h2>
 
-          <div className="space-y-4">
+          <div className="space-y-4 pt-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 Property Title *
               </label>
               <input
@@ -136,13 +140,13 @@ const CreateProperty = () => {
                 minLength={10}
                 value={formData.title}
                 onChange={handleChange}
-                placeholder="e.g., Spacious 2BHK Apartment in Downtown"
+                placeholder="e.g., Modern 2-Bedroom Apartment with City View"
                 className="input-field"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 Description *
               </label>
               <textarea
@@ -152,15 +156,48 @@ const CreateProperty = () => {
                 rows={4}
                 value={formData.description}
                 onChange={handleChange}
-                placeholder="Describe your property in detail..."
+                placeholder="Describe the key features, location benefits, and what makes your property unique..."
                 className="input-field"
               />
-              <p className="text-xs text-gray-500 mt-1">Minimum 50 characters</p>
+              <p className="text-xs text-gray-500 mt-1">Minimum 50 characters.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Listing Type *
+                </label>
+                <select
+                  name="listingType"
+                  value={formData.listingType}
+                  onChange={handleChange}
+                  className="input-field"
+                >
+                  <option value="RENT">For Rent</option>
+                  <option value="SALE">For Sale</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Price (₹) *
+                </label>
+                <input
+                  type="number"
+                  name="price"
+                  required
+                  min="0"
+                  value={formData.price}
+                  onChange={handleChange}
+                  placeholder={formData.listingType === 'RENT' ? '25000' : '5000000'}
+                  className="input-field"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
                   Property Type *
                 </label>
                 <select
@@ -170,23 +207,22 @@ const CreateProperty = () => {
                   className="input-field"
                 >
                   {propertyTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
+                    <option key={type} value={type}>{type.charAt(0) + type.slice(1).toLowerCase()}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Monthly Rent (₹) *
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Availability *
                 </label>
                 <input
-                  type="number"
-                  name="price"
+                  type="text"
+                  name="availability"
                   required
-                  min="0"
-                  value={formData.price}
+                  value={formData.availability}
                   onChange={handleChange}
-                  placeholder="25000"
+                  placeholder="e.g., Available Now, or Available from July 1st"
                   className="input-field"
                 />
               </div>
@@ -195,15 +231,15 @@ const CreateProperty = () => {
         </div>
 
         {/* Location */}
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+        <div className="card bg-white">
+          <h2 className="text-xl font-semibold mb-4 text-text-primary border-b pb-2 flex items-center gap-2">
             <MapPin className="h-5 w-5" />
             Location Details
           </h2>
 
-          <div className="space-y-4">
+          <div className="space-y-4 pt-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 Address *
               </label>
               <input
@@ -212,14 +248,14 @@ const CreateProperty = () => {
                 required
                 value={formData.address}
                 onChange={handleChange}
-                placeholder="Street address"
+                placeholder="e.g., 123 Main Street, Marine Lines"
                 className="input-field"
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-600 mb-2">
                   City *
                 </label>
                 <input
@@ -234,7 +270,7 @@ const CreateProperty = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-600 mb-2">
                   State
                 </label>
                 <input
@@ -248,7 +284,7 @@ const CreateProperty = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-600 mb-2">
                   Zip Code
                 </label>
                 <input
@@ -265,12 +301,12 @@ const CreateProperty = () => {
         </div>
 
         {/* Property Details */}
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Property Details</h2>
+        <div className="card bg-white">
+          <h2 className="text-xl font-semibold mb-4 text-text-primary border-b pb-2">Property Details</h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 Bedrooms *
               </label>
               <input
@@ -285,7 +321,7 @@ const CreateProperty = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 Bathrooms *
               </label>
               <input
@@ -300,7 +336,7 @@ const CreateProperty = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-600 mb-2">
                 Area (sq ft)
               </label>
               <input
@@ -309,7 +345,7 @@ const CreateProperty = () => {
                 min="0"
                 value={formData.area}
                 onChange={handleChange}
-                placeholder="1200"
+                placeholder="e.g., 1200"
                 className="input-field"
               />
             </div>
@@ -317,41 +353,41 @@ const CreateProperty = () => {
         </div>
 
         {/* Amenities */}
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Amenities</h2>
+        <div className="card bg-white">
+          <h2 className="text-xl font-semibold mb-4 text-text-primary border-b pb-2">Amenities</h2>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
             {commonAmenities.map(amenity => (
               <label
                 key={amenity}
-                className="flex items-center space-x-2 cursor-pointer"
+                className="flex items-center space-x-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <input
                   type="checkbox"
                   checked={formData.amenities.includes(amenity)}
                   onChange={() => handleAmenityToggle(amenity)}
-                  className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                  className="w-4 h-4 text-primary rounded focus:ring-primary"
                 />
-                <span className="text-sm">{amenity}</span>
+                <span className="text-sm text-gray-700">{amenity}</span>
               </label>
             ))}
           </div>
         </div>
 
         {/* Images */}
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+        <div className="card bg-white">
+          <h2 className="text-xl font-semibold mb-4 text-text-primary border-b pb-2 flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Property Images *
           </h2>
 
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Add image URLs for your property. First image will be the cover photo.
+          <p className="text-sm text-gray-500 mb-4">
+            Provide direct URLs for your property images. The first image will be used as the main cover photo.
           </p>
 
           <div className="space-y-3">
             {imageUrls.map((url, index) => (
-              <div key={index} className="flex gap-2">
+              <div key={index} className="flex items-center gap-2">
                 <input
                   type="url"
                   value={url}
@@ -360,7 +396,7 @@ const CreateProperty = () => {
                   className="input-field flex-1"
                 />
                 {index === 0 && (
-                  <span className="px-3 py-2 bg-primary-100 text-primary-800 rounded-lg text-sm font-medium">
+                  <span className="px-3 py-2 bg-primary bg-opacity-10 text-primary rounded-lg text-sm font-medium">
                     Cover
                   </span>
                 )}
@@ -371,26 +407,26 @@ const CreateProperty = () => {
           <button
             type="button"
             onClick={addImageUrlField}
-            className="btn-secondary mt-4"
+            className="btn-outline mt-4"
           >
             + Add Another Image
           </button>
         </div>
 
         {/* Submit */}
-        <div className="flex gap-4">
+        <div className="flex gap-4 pt-4">
           <button
             type="submit"
             disabled={loading}
             className="btn-primary flex-1"
           >
-            {loading ? 'Creating Property...' : 'Create Property Listing'}
+            {loading ? 'Submitting Property...' : 'Submit Property Listing'}
           </button>
 
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="btn-secondary"
+            className="btn-outline"
           >
             Cancel
           </button>

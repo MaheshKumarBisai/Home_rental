@@ -4,8 +4,7 @@
  */
 
 const jwt = require("jsonwebtoken");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const { RefreshToken, User } = require("../models");
 
 /**
  * Generate access token
@@ -32,12 +31,14 @@ const saveRefreshToken = async (userId, token) => {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
 
-  // Use upsert to avoid unique constraint errors when the same token already exists.
-  // If a record with the token exists, update its expiresAt and userId; otherwise create it.
-  await prisma.refreshToken.upsert({
-    where: { token },
-    update: { expiresAt, userId },
-    create: { token, userId, expiresAt },
+  // Remove any existing tokens for this user
+  await RefreshToken.destroy({ where: { userId } });
+
+  // Save the new token
+  await RefreshToken.create({
+    token,
+    userId,
+    expiresAt,
   });
 };
 
@@ -48,9 +49,9 @@ const verifyRefreshToken = async (token) => {
   try {
     const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
 
-    const storedToken = await prisma.refreshToken.findUnique({
+    const storedToken = await RefreshToken.findOne({
       where: { token },
-      include: { user: true },
+      include: { model: User, as: "user" },
     });
 
     if (!storedToken) {
@@ -58,7 +59,7 @@ const verifyRefreshToken = async (token) => {
     }
 
     if (new Date() > storedToken.expiresAt) {
-      await prisma.refreshToken.delete({ where: { token } });
+      await RefreshToken.destroy({ where: { token } });
       throw new Error("Refresh token expired");
     }
 
@@ -72,7 +73,7 @@ const verifyRefreshToken = async (token) => {
  * Delete refresh token
  */
 const deleteRefreshToken = async (token) => {
-  await prisma.refreshToken.deleteMany({
+  await RefreshToken.destroy({
     where: { token },
   });
 };
@@ -81,7 +82,7 @@ const deleteRefreshToken = async (token) => {
  * Delete all user refresh tokens
  */
 const deleteAllUserTokens = async (userId) => {
-  await prisma.refreshToken.deleteMany({
+  await RefreshToken.destroy({
     where: { userId },
   });
 };

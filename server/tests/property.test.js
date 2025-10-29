@@ -1,113 +1,83 @@
-/**
- * PROPERTY ENDPOINTS TESTS
- */
-
 const request = require('supertest');
 const app = require('../app');
+const { User, Property } = require('../models');
 
 describe('Property Endpoints', () => {
   let ownerToken;
+  let ownerId;
   let propertyId;
 
-  // Setup: Register owner user
+  // Setup: Create an OWNER user and get a token
   beforeAll(async () => {
-    const response = await request(app)
+    await User.destroy({ where: { email: 'propertyowner@test.com' } });
+    await request(app)
       .post('/api/auth/register')
       .send({
-        email: `owner${Date.now()}@example.com`,
-        password: 'Owner@1234',
-        firstName: 'Owner',
-        lastName: 'User',
-        role: 'OWNER'
+        email: 'propertyowner@test.com',
+        password: 'password123',
+        fullName: 'Property Owner',
+        role: 'OWNER',
       });
-    ownerToken = response.body.data.accessToken;
+    const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+            email: 'propertyowner@test.com',
+            password: 'password123',
+        });
+    ownerToken = loginRes.body.data.accessToken;
+    ownerId = loginRes.body.data.user.id;
   });
 
-  // Test create property
-  test('POST /api/properties/create - should create property', async () => {
-    const propertyData = {
-      title: 'Beautiful 2BHK Apartment',
-      description: 'A spacious and well-furnished 2BHK apartment in the heart of the city with all modern amenities.',
-      price: 25000,
-      address: '123 Main Street',
-      city: 'Mumbai',
-      state: 'Maharashtra',
-      zipCode: '400001',
-      type: 'APARTMENT',
-      bedrooms: 2,
-      bathrooms: 2,
-      area: 1200,
-      amenities: ['WiFi', 'Parking', 'Gym', 'Security'],
-      images: ['https://example.com/image1.jpg']
-    };
+  // Test data for a new property
+  const newProperty = {
+    title: 'Modern Test Apartment',
+    description: 'A beautiful and modern test apartment with great views.',
+    price: 50000,
+    listingType: 'RENT',
+    type: 'APARTMENT',
+    address: '123 Test St',
+    city: 'Testville',
+    bedrooms: 2,
+    bathrooms: 2,
+    amenities: ['WiFi', 'Parking'],
+    images: ['http://example.com/image1.jpg', 'http://example.com/image2.jpg'],
+  };
 
-    const response = await request(app)
+  it('should allow an OWNER to create a new property', async () => {
+    const res = await request(app)
       .post('/api/properties/create')
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send(propertyData)
-      .expect(201);
-
-    expect(response.body.status).toBe('success');
-    expect(response.body.data.property).toHaveProperty('id');
-    expect(response.body.data.property.title).toBe(propertyData.title);
-
-    propertyId = response.body.data.property.id;
+      .send(newProperty);
+    expect(res.statusCode).toEqual(201);
+    expect(res.body.data.property.title).toBe(newProperty.title);
+    propertyId = res.body.data.property.id;
   });
 
-  // Test get all properties
-  test('GET /api/properties/all - should get all properties', async () => {
-    const response = await request(app)
-      .get('/api/properties/all')
-      .expect(200);
-
-    expect(response.body.status).toBe('success');
-    expect(Array.isArray(response.body.data.properties)).toBe(true);
+  it('should fetch a list of all properties', async () => {
+    const res = await request(app).get('/api/properties/all');
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.properties.length).toBeGreaterThan(0);
   });
 
-  // Test get property by ID
-  test('GET /api/properties/:id - should get property details', async () => {
-    const response = await request(app)
-      .get(`/api/properties/${propertyId}`)
-      .expect(200);
-
-    expect(response.body.status).toBe('success');
-    expect(response.body.data.property.id).toBe(propertyId);
+  it('should fetch details for a single property', async () => {
+    const res = await request(app).get(`/api/properties/${propertyId}`);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.property.id).toBe(propertyId);
   });
 
-  // Test search properties
-  test('GET /api/properties/search - should search properties', async () => {
-    const response = await request(app)
-      .get('/api/properties/search?city=Mumbai&type=APARTMENT')
-      .expect(200);
-
-    expect(response.body.status).toBe('success');
-    expect(Array.isArray(response.body.data.properties)).toBe(true);
-  });
-
-  // Test update property
-  test('PUT /api/properties/update/:id - should update property', async () => {
-    const updateData = {
-      price: 28000,
-      isAvailable: true
-    };
-
-    const response = await request(app)
+  it('should allow an OWNER to update their property', async () => {
+    const res = await request(app)
       .put(`/api/properties/update/${propertyId}`)
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send(updateData)
-      .expect(200);
-
-    expect(response.body.status).toBe('success');
-    expect(response.body.data.property.price).toBe(28000);
+      .send({ title: 'Updated Test Apartment' });
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.property.title).toBe('Updated Test Apartment');
   });
 
-  // Test delete property
-  test('DELETE /api/properties/delete/:id - should delete property', async () => {
-    const response = await request(app)
+  it('should allow an OWNER to delete their property', async () => {
+    const res = await request(app)
       .delete(`/api/properties/delete/${propertyId}`)
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .expect(200);
-
-    expect(response.body.status).toBe('success');
+      .set('Authorization', `Bearer ${ownerToken}`);
+    expect(res.statusCode).toEqual(200);
   });
 });

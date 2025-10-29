@@ -1,87 +1,126 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { propertyAPI } from '../api/propertyService'
-import { reviewAPI } from '../api/reviewService'
-import { useAuth } from '../context/AuthContext'
-import Loader from '../components/Loader'
-import { MapPin, Bed, Bath, DollarSign, Star, Calendar, User, Maximize } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { propertyAPI } from '../api/propertyService';
+import { reviewAPI } from '../api/reviewService';
+import { bookingAPI } from '../api/bookingService';
+import { wishlistAPI } from '../api/wishlistService';
+import { useAuth } from '../context/AuthContext';
+import Loader from '../components/Loader';
+import { MapPin, Bed, Bath, Star, Maximize, Heart, Check, X, Clock, User } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const PropertyDetails = () => {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const { isAuthenticated } = useAuth()
-  const [property, setProperty] = useState(null)
-  const [reviews, setReviews] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
+  const [property, setProperty] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isInWishlist, setIsInWishlist] = useState(false);
+  const [wishlistLoading, setWishlistLoading] = useState(false);
 
   useEffect(() => {
-    fetchPropertyDetails()
-    fetchReviews()
-  }, [id])
+    fetchPropertyDetails();
+    fetchReviews();
+    if (isAuthenticated) {
+      checkWishlistStatus();
+    }
+  }, [id, isAuthenticated]);
 
   const fetchPropertyDetails = async () => {
+    setLoading(true);
     try {
-      const response = await propertyAPI.getById(id)
-      setProperty(response.data.data.property)
+      const response = await propertyAPI.getById(id);
+      setProperty(response.data.data.property);
     } catch (error) {
-      console.error('Error fetching property:', error)
-      toast.error('Property not found')
-      navigate('/properties')
+      toast.error('Property not found.');
+      navigate('/properties');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const fetchReviews = async () => {
     try {
-      const response = await reviewAPI.getPropertyReviews(id)
-      setReviews(response.data.data.reviews)
+      const response = await reviewAPI.getPropertyReviews(id);
+      setReviews(response.data.data.reviews);
     } catch (error) {
-      console.error('Error fetching reviews:', error)
+      console.error('Error fetching reviews:', error);
     }
-  }
+  };
 
-  const handleBook = () => {
+  const checkWishlistStatus = async () => {
+    try {
+      const response = await wishlistAPI.get();
+      const wishlist = response.data.data.wishlist;
+      setIsInWishlist(wishlist.some(item => item.propertyId === id));
+    } catch (error) {
+      console.error('Error checking wishlist status', error);
+    }
+  };
+
+  const handleToggleWishlist = async () => {
     if (!isAuthenticated) {
-      toast.error('Please login to book this property')
-      navigate('/login')
-      return
+      toast.error('Please log in to manage your wishlist.');
+      navigate('/login');
+      return;
     }
-    navigate('/create-booking', { state: { propertyId: id } })
-  }
+    setWishlistLoading(true);
+    try {
+      if (isInWishlist) {
+        await wishlistAPI.remove(id);
+        toast.success('Removed from wishlist!');
+      } else {
+        await wishlistAPI.add(id);
+        toast.success('Added to wishlist!');
+      }
+      setIsInWishlist(!isInWishlist);
+    } catch (error) {
+      toast.error('Failed to update wishlist.');
+    } finally {
+      setWishlistLoading(false);
+    }
+  };
 
-  const calculateAverageRating = () => {
-    if (reviews.length === 0) return 0
-    const sum = reviews.reduce((acc, review) => acc + review.rating, 0)
-    return (sum / reviews.length).toFixed(1)
-  }
+  const handleApply = async () => {
+    if (!isAuthenticated) {
+      toast.error('Please log in to apply for this property.');
+      navigate('/login');
+      return;
+    }
+    try {
+      await bookingAPI.apply(id);
+      toast.success('Application submitted successfully!');
+      navigate('/bookings');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to submit application.');
+    }
+  };
 
-  if (loading) return <Loader fullScreen />
+  if (loading) return <Loader fullScreen />;
+  if (!property) return null;
 
-  if (!property) return null
-
-  const averageRating = calculateAverageRating()
+  const averageRating = reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-bg-light">
+    <div className="bg-background min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Property Images */}
-        <div className="mb-8 animate-fade-in">
+        {/* Images */}
+        <div className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2 h-96 rounded-2xl overflow-hidden">
+            <div className="md:col-span-2 h-[500px] rounded-2xl overflow-hidden group">
               <img
-                src={property.images?.[0] || '/placeholder.png'}
+                src={property.images?.[0] || 'https://via.placeholder.com/800x600.png?text=No+Image'}
                 alt={property.title}
-                className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
             </div>
             {property.images?.slice(1, 5).map((image, index) => (
-              <div key={index} className="h-48 rounded-2xl overflow-hidden">
+              <div key={index} className="h-48 rounded-2xl overflow-hidden group">
                 <img
                   src={image}
                   alt={`${property.title} ${index + 2}`}
-                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
               </div>
             ))}
@@ -91,93 +130,51 @@ const PropertyDetails = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Title and Location */}
-            <div className="card animate-slide-up">
+            <div className="card bg-white">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-3">
-                    {property.title}
-                  </h1>
-                  <div className="flex items-center text-gray-600 dark:text-gray-400 mb-4">
-                    <MapPin className="h-5 w-5 mr-2 text-blue-600" />
+                  <h1 className="text-4xl font-bold text-text-primary mb-3">{property.title}</h1>
+                  <div className="flex items-center text-gray-500">
+                    <MapPin size={18} className="mr-2" />
                     <span className="text-lg">{property.address}, {property.city}</span>
                   </div>
                 </div>
-                <span className={`px-4 py-2 rounded-full text-sm font-semibold ${
-                  property.isAvailable
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                }`}>
-                  {property.isAvailable ? 'Available' : 'Not Available'}
-                </span>
+                <button onClick={handleToggleWishlist} disabled={wishlistLoading} className="p-3 rounded-full hover:bg-red-50 transition-colors">
+                  <Heart className={`h-6 w-6 ${isInWishlist ? 'text-red-500 fill-current' : 'text-gray-400'}`} />
+                </button>
               </div>
 
-              {/* Property Stats */}
-              <div className="flex flex-wrap items-center gap-6 pb-6 border-b border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 px-4 py-2 rounded-xl">
-                  <Bed className="h-5 w-5 text-blue-600" />
-                  <span className="font-semibold">{property.bedrooms} Bedrooms</span>
-                </div>
-                <div className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 px-4 py-2 rounded-xl">
-                  <Bath className="h-5 w-5 text-blue-600" />
-                  <span className="font-semibold">{property.bathrooms} Bathrooms</span>
-                </div>
-                {property.area && (
-                  <div className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 px-4 py-2 rounded-xl">
-                    <Maximize className="h-5 w-5 text-blue-600" />
-                    <span className="font-semibold">{property.area} sq ft</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <span className="px-4 py-2 rounded-xl bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-semibold">
-                    {property.type}
-                  </span>
-                </div>
+              <div className="flex flex-wrap items-center gap-6 py-4 border-y">
+                <div className="flex items-center gap-2"><Bed size={20} className="text-primary" /><span>{property.bedrooms} Bedrooms</span></div>
+                <div className="flex items-center gap-2"><Bath size={20} className="text-primary" /><span>{property.bathrooms} Bathrooms</span></div>
+                {property.area && <div className="flex items-center gap-2"><Maximize size={20} className="text-primary" /><span>{property.area} sq ft</span></div>}
+                <span className="px-3 py-1 rounded-full bg-primary bg-opacity-10 text-primary text-sm font-medium">{property.type}</span>
               </div>
 
-              {/* Rating */}
               {reviews.length > 0 && (
                 <div className="flex items-center gap-2 pt-4">
-                  <div className="flex items-center">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`h-5 w-5 ${
-                          i < Math.round(averageRating)
-                            ? 'text-yellow-400 fill-current'
-                            : 'text-gray-300'
-                        }`}
-                      />
-                    ))}
+                   <div className="flex items-center">
+                    {[...Array(5)].map((_, i) => <Star key={i} size={18} className={` ${i < Math.round(averageRating) ? 'text-yellow-400 fill-current' : 'text-gray-300'}`} />)}
                   </div>
-                  <span className="font-semibold text-lg">{averageRating}</span>
-                  <span className="text-gray-600 dark:text-gray-400">
-                    ({reviews.length} {reviews.length === 1 ? 'review' : 'reviews'})
-                  </span>
+                  <span className="font-semibold">{averageRating}</span>
+                  <span className="text-gray-500">({reviews.length} reviews)</span>
                 </div>
               )}
             </div>
 
-            {/* Description */}
-            <div className="card animate-slide-up" style={{ animationDelay: '0.1s' }}>
-              <h2 className="text-2xl font-bold mb-4 gradient-text">About this Property</h2>
-              <p className="text-gray-600 dark:text-gray-400 whitespace-pre-line leading-relaxed text-lg">
-                {property.description}
-              </p>
+            <div className="card bg-white">
+              <h2 className="text-2xl font-bold mb-4 text-text-primary">About this Property</h2>
+              <p className="text-gray-600 whitespace-pre-line leading-relaxed">{property.description}</p>
             </div>
 
-            {/* Amenities */}
             {property.amenities?.length > 0 && (
-              <div className="card animate-slide-up" style={{ animationDelay: '0.2s' }}>
-                <h2 className="text-2xl font-bold mb-4 gradient-text">Amenities</h2>
+              <div className="card bg-white">
+                <h2 className="text-2xl font-bold mb-4 text-text-primary">Amenities</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {property.amenities.map((amenity, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-2 p-3 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20"
-                    >
-                      <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-600 to-purple-600"></div>
-                      <span className="font-medium">{amenity}</span>
+                    <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50">
+                      <Check size={16} className="text-green-500" />
+                      <span className="font-medium text-gray-700">{amenity}</span>
                     </div>
                   ))}
                 </div>
@@ -185,99 +182,78 @@ const PropertyDetails = () => {
             )}
 
             {/* Reviews */}
-            <div className="card animate-slide-up" style={{ animationDelay: '0.3s' }}>
-              <h2 className="text-2xl font-bold mb-6 gradient-text">Guest Reviews</h2>
+            <div className="card bg-white">
+              <h2 className="text-2xl font-bold mb-4 text-text-primary">Guest Reviews</h2>
+
+              <ReviewForm propertyId={id} onReviewSubmitted={fetchReviews} />
+
               {reviews.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-4 mt-6">
                   {reviews.map((review) => (
-                    <div
-                      key={review.id}
-                      className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-100 dark:border-blue-900"
-                    >
-                      <div className="flex items-center justify-between mb-3">
+                    <div key={review.id} className="p-4 rounded-lg border bg-gray-50">
+                      <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold">
+                          <div className="w-10 h-10 rounded-full bg-primary bg-opacity-10 flex items-center justify-center text-primary font-bold">
                             {review.renter.firstName[0]}
                           </div>
                           <div>
-                            <p className="font-semibold">
-                              {review.renter.firstName} {review.renter.lastName}
-                            </p>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              {new Date(review.createdAt).toLocaleDateString()}
-                            </p>
+                            <p className="font-semibold">{review.renter.firstName} {review.renter.lastName}</p>
+                            <p className="text-sm text-gray-500">{new Date(review.createdAt).toLocaleDateString()}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
-                          {[...Array(5)].map((_, i) => (
-                            <Star
-                              key={i}
-                              className={`h-4 w-4 ${
-                                i < review.rating
-                                  ? 'text-yellow-400 fill-current'
-                                  : 'text-gray-300'
-                              }`}
-                            />
-                          ))}
+                          {[...Array(5)].map((_, i) => <Star key={i} size={16} className={` ${i < review.rating ? 'text-yellow-400 fill-current' : 'text-gray-300'}`} />)}
                         </div>
                       </div>
-                      <p className="text-gray-700 dark:text-gray-300">{review.comment}</p>
+                      <p className="text-gray-700">{review.comment}</p>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-600 dark:text-gray-400 text-center py-8">
-                  No reviews yet. Be the first to review this property!
-                </p>
+                <p className="text-gray-500 text-center py-8">No reviews yet for this property.</p>
               )}
             </div>
+
           </div>
 
-          {/* Booking Sidebar */}
+          {/* Sidebar */}
           <div className="lg:col-span-1">
-            <div className="card sticky top-24 animate-scale-in">
-              <div className="flex items-center justify-center mb-6 p-6 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600">
-                <div className="text-center text-white">
-                  <div className="flex items-center justify-center text-4xl font-bold mb-2">
-                    <DollarSign className="h-8 w-8" />
-                    <span>{property.price}</span>
-                  </div>
-                  <p className="text-blue-100">per month</p>
-                </div>
+            <div className="card bg-white sticky top-24">
+              <div className="text-center mb-6">
+                <p className="text-lg text-gray-500">{property.listingType === 'RENT' ? 'Monthly Rent' : 'Sale Price'}</p>
+                <p className="text-4xl font-bold text-primary">
+                  ₹{property.price.toLocaleString('en-IN')}
+                </p>
               </div>
 
               <button
-                onClick={handleBook}
-                disabled={!property.isAvailable}
-                className="w-full btn-primary mb-4 flex items-center justify-center gap-2"
+                onClick={handleApply}
+                disabled={property.availability === 'Booked' || (user && user.id === property.ownerId)}
+                className="w-full btn-primary disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                <Calendar className="h-5 w-5" />
-                {property.isAvailable ? 'Book This Property' : 'Not Available'}
+                {user && user.id === property.ownerId ? "This is Your Property" : property.availability === 'Booked' ? 'Booked' : 'Apply Now'}
               </button>
 
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
+              <div className="border-t my-6"></div>
+
+              <div>
+                <h4 className="font-semibold text-gray-700 mb-3">Property Owner</h4>
                 <div className="flex items-center gap-3">
-                  <User className="h-5 w-5 text-gray-400" />
+                  <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                    <User size={24} className="text-gray-500" />
+                  </div>
                   <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Property Owner</p>
-                    <p className="font-semibold">
-                      {property.owner?.firstName} {property.owner?.lastName}
-                    </p>
+                    <p className="font-semibold text-text-primary">{property.owner?.firstName} {property.owner?.lastName}</p>
+                    <p className="text-sm text-gray-500">Owner</p>
                   </div>
                 </div>
-              </div>
-
-              <div className="mt-6 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  <span className="font-semibold">💡 Quick Tip:</span> Book early to secure the best dates!
-                </p>
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default PropertyDetails
+export default PropertyDetails;

@@ -1,5 +1,5 @@
 module.exports = {
   testEnvironment: 'node',
-  coveragePathIgnorePatterns: ['/node_modules/'],
-  testTimeout: 30000
+  setupFilesAfterEnv: ['./jest.setup.js'],
+  testTimeout: 30000,
 };

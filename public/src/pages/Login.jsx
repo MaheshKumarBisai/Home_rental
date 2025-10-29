@@ -23,23 +23,25 @@ const Login = () => {
 
   return (
     <div className="w-full max-w-md">
-      <div className="card">
+      <div className="card bg-white">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <Building2 className="h-12 w-12 text-primary-600" />
+            <div className="bg-primary p-3 rounded-full">
+              <Building2 className="h-8 w-8 text-white" />
+            </div>
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-3xl font-bold text-text-primary">
             Welcome Back
           </h2>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Login to your account
+          <p className="text-gray-500 mt-2">
+            Sign in to continue to your account.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Email
+            <label className="block text-sm font-medium text-gray-600 mb-2">
+              Email Address
             </label>
             <input
               type="email"
@@ -47,12 +49,12 @@ const Login = () => {
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="input-field"
-              placeholder="your@email.com"
+              placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-gray-600 mb-2">
               Password
             </label>
             <input
@@ -68,16 +70,16 @@ const Login = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full btn-primary"
+            className="w-full btn-primary mt-2"
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-          Don't have an account?{' '}
-          <Link to="/register" className="text-primary-600 hover:text-primary-700 font-medium">
-            Register here
+        <p className="mt-6 text-center text-sm text-gray-500">
+          Don't have an account yet?{' '}
+          <Link to="/register" className="text-primary hover:underline font-medium">
+            Sign up
           </Link>
         </p>
       </div>

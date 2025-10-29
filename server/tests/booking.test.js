@@ -1,115 +1,105 @@
-/**
- * BOOKING ENDPOINTS TESTS
- */
-
 const request = require('supertest');
 const app = require('../app');
+const { User, Property, Booking } = require('../models');
+const { Op } = require('sequelize');
 
-describe('Booking Endpoints', () => {
-  let renterToken, ownerToken;
-  let propertyId, bookingId;
+describe('Booking and Application Endpoints', () => {
+  let ownerToken, renterToken;
+  let ownerId, renterId;
+  let propertyId;
+  let bookingId;
 
-  // Setup
+  // Setup: Create an OWNER and a RENTER user, and a property
   beforeAll(async () => {
-    // Register owner
-    const ownerRes = await request(app)
+    // Clean up
+    await User.destroy({ where: { email: { [Op.like]: '%@bookingtest.com' } } });
+
+    // Create Owner
+    await request(app)
       .post('/api/auth/register')
       .send({
-        email: `owner${Date.now()}@example.com`,
-        password: 'Owner@1234',
-        firstName: 'Owner',
-        lastName: 'Test',
-        role: 'OWNER'
+        email: 'owner@bookingtest.com',
+        password: 'password123',
+        fullName: 'Booking Owner',
+        role: 'OWNER',
       });
-    ownerToken = ownerRes.body.data.accessToken;
+    const ownerLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+            email: 'owner@bookingtest.com',
+            password: 'password123',
+        });
+    ownerToken = ownerLoginRes.body.data.accessToken;
+    ownerId = ownerLoginRes.body.data.user.id;
 
-    // Create property
+    // Create Renter
+    await request(app)
+      .post('/api/auth/register')
+      .send({
+        email: 'renter@bookingtest.com',
+        password: 'password123',
+        fullName: 'Booking Renter',
+        role: 'RENTER',
+      });
+    const renterLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({
+            email: 'renter@bookingtest.com',
+            password: 'password123',
+        });
+    renterToken = renterLoginRes.body.data.accessToken;
+    renterId = renterLoginRes.body.data.user.id;
+
+    // Create Property
     const propertyRes = await request(app)
       .post('/api/properties/create')
       .set('Authorization', `Bearer ${ownerToken}`)
       .send({
-        title: 'Test Property for Booking',
-        description: 'A nice property for testing booking functionality with all required fields.',
-        price: 5000,
-        address: '456 Test Street',
-        city: 'Delhi',
-        type: 'HOUSE',
-        bedrooms: 3,
-        bathrooms: 2,
-        amenities: ['WiFi'],
-        images: ['https://example.com/test.jpg']
+        title: 'Booking Test Property',
+        description: 'A property for testing the booking flow.',
+        price: 10000,
+        listingType: 'RENT',
+        type: 'APARTMENT',
+        address: '456 Booking Ave',
+        city: 'Booksville',
+        bedrooms: 1,
+        bathrooms: 1,
+        amenities: ['Test'],
+        images: ['http://example.com/test.jpg'],
       });
     propertyId = propertyRes.body.data.property.id;
-
-    // Register renter
-    const renterRes = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `renter${Date.now()}@example.com`,
-        password: 'Renter@1234',
-        firstName: 'Renter',
-        lastName: 'Test',
-        role: 'RENTER'
-      });
-    renterToken = renterRes.body.data.accessToken;
   });
 
-  // Test create booking
-  test('POST /api/bookings/create - should create booking', async () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 8);
-
-    const bookingData = {
-      propertyId,
-      checkInDate: tomorrow.toISOString(),
-      checkOutDate: nextWeek.toISOString()
-    };
-
-    const response = await request(app)
-      .post('/api/bookings/create')
+  it('should allow a RENTER to apply for a property', async () => {
+    const res = await request(app)
+      .post('/api/bookings/apply')
       .set('Authorization', `Bearer ${renterToken}`)
-      .send(bookingData)
-      .expect(201);
-
-    expect(response.body.status).toBe('success');
-    expect(response.body.data.booking).toHaveProperty('id');
-    expect(response.body.data.booking.status).toBe('CONFIRMED');
-
-    bookingId = response.body.data.booking.id;
+      .send({ propertyId });
+    expect(res.statusCode).toEqual(201);
+    expect(res.body.data.application.status).toBe('PENDING');
+    bookingId = res.body.data.application.id;
   });
 
-  // Test double booking prevention
-  test('POST /api/bookings/create - should prevent double booking', async () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 2);
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 6);
-
-    const bookingData = {
-      propertyId,
-      checkInDate: tomorrow.toISOString(),
-      checkOutDate: nextWeek.toISOString()
-    };
-
-    const response = await request(app)
-      .post('/api/bookings/create')
-      .set('Authorization', `Bearer ${renterToken}`)
-      .send(bookingData)
-      .expect(409);
-
-    expect(response.body.status).toBe('error');
-    expect(response.body.message).toContain('already booked');
+  it('should allow an OWNER to view applications for their properties', async () => {
+    const res = await request(app)
+      .get('/api/bookings/owner')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.bookings.length).toBeGreaterThan(0);
   });
 
-  // Test cancel booking
-  test('DELETE /api/bookings/cancel/:id - should cancel booking', async () => {
-    const response = await request(app)
-      .delete(`/api/bookings/cancel/${bookingId}`)
-      .set('Authorization', `Bearer ${renterToken}`)
-      .expect(200);
+  it('should allow an OWNER to ACCEPT an application', async () => {
+    const res = await request(app)
+      .put(`/api/bookings/applications/${bookingId}/status`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ status: 'ACCEPTED' });
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.application.status).toBe('ACCEPTED');
+  });
 
-    expect(response.body.status).toBe('success');
+  it('should verify the property is marked as "Booked" after an application is accepted', async () => {
+    const res = await request(app).get(`/api/properties/${propertyId}`);
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data.property.availability).toBe('Booked');
   });
 });

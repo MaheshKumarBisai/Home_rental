@@ -3,8 +3,7 @@
  * Handles chat message retrieval
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { Message, Booking, User } = require('../models');
 
 /**
  * @route   GET /api/chat/booking/:id
@@ -16,13 +15,12 @@ exports.getChatHistory = async (req, res, next) => {
     const { id } = req.params;
 
     // Check if booking exists
-    const booking = await prisma.booking.findUnique({
-      where: { id },
-      include: {
-        property: {
-          select: { ownerId: true }
+    const booking = await Booking.findByPk(id, {
+        include: {
+            model: Property,
+            as: 'property',
+            attributes: ['ownerId']
         }
-      }
     });
 
     if (!booking) {
@@ -44,37 +42,30 @@ exports.getChatHistory = async (req, res, next) => {
     }
 
     // Get all messages for this booking
-    const messages = await prisma.message.findMany({
+    const messages = await Message.findAll({
       where: { bookingId: id },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profileImage: true
-          }
+      include: [
+        {
+          model: User,
+          as: 'sender',
+          attributes: ['id', 'fullName', 'avatar']
         },
-        receiver: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profileImage: true
-          }
+        {
+          model: User,
+          as: 'receiver',
+          attributes: ['id', 'fullName', 'avatar']
         }
-      },
-      orderBy: { createdAt: 'asc' }
+      ],
+      order: [['createdAt', 'ASC']]
     });
 
     // Mark messages as read for current user
-    await prisma.message.updateMany({
+    await Message.update({ isRead: true }, {
       where: {
         bookingId: id,
         receiverId: req.user.id,
         isRead: false
-      },
-      data: { isRead: true }
+      }
     });
 
     res.status(200).json({
